@@ -51,7 +51,7 @@ export class Viewer {
 			this.container.appendChild(this.renderer.domElement);
 			
 			// Create sphere geometry
-			const geometry = new THREE.SphereGeometry(500, 60, 40);
+			const geometry = new THREE.SphereGeometry(1000, 256, 128); // Increased segments
 			geometry.scale(-1, 1, 1); // Invert to see inside
 			
 			// Load texture
@@ -61,6 +61,13 @@ export class Viewer {
 				(texture) => {
 					// Success callback
 					console.log('VR Viewer texture loaded successfully');
+					
+					// Improve texture quality
+					texture.minFilter = THREE.LinearMipmapLinearFilter;
+					texture.magFilter = THREE.LinearFilter;
+					texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+					texture.needsUpdate = true;
+					
 					const material = new THREE.MeshBasicMaterial({ map: texture });
 					this.sphere = new THREE.Mesh(geometry, material);
 					this.scene.add(this.sphere);

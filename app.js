@@ -9,13 +9,22 @@ let currentXrReferenceSpace = null;
 let nonVrAnimationFrameId = null;
 
 const preferredReferenceSpaces = ['local-floor', 'local', 'viewer'];
+const DEFAULT_PANORAMA = 'DJI_0423.JPG';
+
+// Function to get panorama from URL hash
+function getPanoramaFromUrl() {
+	const hash = window.location.hash.substring(1); // Remove #
+	const params = new URLSearchParams(hash);
+	return params.get('panorama');
+}
 
 // Initialize Photo Sphere Viewer
 function initPanoramaViewer() {
 	try {
+		const panoramaUrl = getPanoramaFromUrl() || DEFAULT_PANORAMA;
 		panoramaViewer = new PhotoSphereViewer({
 			container: 'panorama-viewer',
-			panorama: 'DJI_0423.JPG',
+			panorama: panoramaUrl,
 			navbar: [
 				'zoom',
 				'move',
@@ -68,10 +77,11 @@ async function initVRViewer() {
 			throw new Error('Viewer class not found in imported module');
 		}
 		
+		const panoramaUrl = getPanoramaFromUrl() || DEFAULT_PANORAMA;
 		console.log('Creating VR Viewer instance...');
 		vrViewer = new ViewerClass({
 			container: 'viewer',
-			panorama: 'DJI_0423.JPG',
+			panorama: panoramaUrl,
 			caption: '360° VR Panorama Viewer'
 		});
 
@@ -424,9 +434,11 @@ function updateXrStatus() {
 // DOM elements and event listeners
 const enterVrBtn = document.getElementById('enter-vr');
 const exitVrBtn = document.getElementById('exit-vr');
+let initialPanoramaUrl = ''; // Store the initial URL to check for changes
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
+	initialPanoramaUrl = getPanoramaFromUrl();
 	// Initialize Photo Sphere Viewer by default
 	initPanoramaViewer();
 	
@@ -442,5 +454,59 @@ document.addEventListener('DOMContentLoaded', () => {
 		if (panoramaViewer && !isVRMode) {
 			panoramaViewer.resize();
 		}
+	});
+
+	// Listen for hash changes to reload viewer if panorama changes
+	window.addEventListener('hashchange', () => {
+		const newPanoramaUrl = getPanoramaFromUrl();
+		if (newPanoramaUrl && newPanoramaUrl !== (initialPanoramaUrl || DEFAULT_PANORAMA)) {
+			console.log('Panorama URL changed in hash, reloading viewer...');
+			initialPanoramaUrl = newPanoramaUrl; // Update the stored URL
+
+			// Clean up existing viewers
+			if (isVRMode) {
+				exitVR().then(() => { // Ensure VR is exited before re-initializing
+					if (panoramaViewer && panoramaViewer.destroy) {
+						panoramaViewer.destroy();
+						panoramaViewer = null;
+					}
+					initPanoramaViewer(); // Re-initialize with new panorama
+				});
+			} else {
+				if (panoramaViewer && panoramaViewer.destroy) {
+					panoramaViewer.destroy();
+					panoramaViewer = null;
+				}
+				if (vrViewer && vrViewer.destroy) { // Also destroy VR viewer if it was initialized
+					vrViewer.destroy();
+					vrViewer = null;
+				}
+				initPanoramaViewer(); // Re-initialize with new panorama
+			}
+		} else if (!newPanoramaUrl && initialPanoramaUrl) {
+            // Hash was removed or panorama param removed, reload with default
+            console.log('Panorama URL removed from hash, reloading with default...');
+            initialPanoramaUrl = ''; // Reset stored URL
+
+            if (isVRMode) {
+				exitVR().then(() => {
+					if (panoramaViewer && panoramaViewer.destroy) {
+						panoramaViewer.destroy();
+						panoramaViewer = null;
+					}
+					initPanoramaViewer();
+				});
+			} else {
+				if (panoramaViewer && panoramaViewer.destroy) {
+					panoramaViewer.destroy();
+					panoramaViewer = null;
+				}
+                if (vrViewer && vrViewer.destroy) {
+					vrViewer.destroy();
+					vrViewer = null;
+				}
+				initPanoramaViewer();
+			}
+        }
 	});
 });
