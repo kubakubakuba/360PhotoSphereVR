@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>360° VR Photo Sphere Viewer</title>
 	<link rel="stylesheet" href="./style.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.css">
 </head>
 <body>
 	<div class="header">
@@ -14,7 +15,10 @@
 	
 	<div class="container">
 		<div class="viewer-container">
-			<div id="viewer"></div>
+			<div id="panorama-viewer"></div>
+			
+			<div id="viewer" style="display: none;"></div>
+			
 			<div class="loading" id="vr-loading">
 				<div class="spinner"></div>
 				<div class="loading-text" id="loading-text">Preparing VR Experience</div>
@@ -29,7 +33,7 @@
 				<h2>VR Controls</h2>
 				<button id="enter-vr" class="btn btn-vr">
 					<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
-						<path d="M12 4C7.58 4 4 7.58 4 12s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm-1-7h-2v2h2v-2zm4 0h-2v2h2v-2zM8.29 9.71L9.71 8.29 12 10.59l2.29-2.3 1.41 1.41L13.41 12l2.3 2.29-1.41 1.41L12 13.41l-2.29 2.3-1.41-1.41L10.59 12l-2.3-2.29z"/>
+						<path d="M12 4C7.58 4 4 7.58 4 12s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
 					</svg>
 					Enter VR Mode
 				</button>
@@ -69,12 +73,12 @@
 			<div class="control-group">
 				<h2>Instructions</h2>
 				<div class="instructions">
+					<p>Click and drag to explore the 360° panorama.</p>
+					<p>Use mouse wheel to zoom in/out.</p>
 					<p>Click "Enter VR Mode" to start the VR experience.</p>
-					<p>Move your head to look around the 360° environment.</p>
-					<p>Ensure your device supports WebXR.</p>
+					<p>Move your head to look around in VR.</p>
+					<p>Ensure your device supports WebXR for VR.</p>
 					<p>Requires HTTPS connection for VR functionality.</p>
-					<p>If image doesn't load, check console for errors (e.g., image path).</p>
-					<p>When not in VR, click and drag on the image to rotate the view.</p>
 					<p><strong>When in VR, use Left/Right arrow keys to rotate the panorama.</strong></p>
 				</div>
 			</div>
@@ -85,42 +89,15 @@
 		<p>Photo Sphere Viewer VR Experience | Compatible with Oculus Quest and other WebXR devices</p>
 	</div>
 
-	<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-	
-	<script src="viewer.js"></script>
-	<script src="script.js"></script>
-
-	<script>
-		const enterVrBtn = document.getElementById('enter-vr');
-		const exitVrBtn = document.getElementById('exit-vr');
-
-		const viewer = new Viewer({
-			container: 'viewer',
-			panorama: 'DJI_0423.JPG', 
-			caption: '360° Panorama Viewer'
-		});
-
-		let nonVrAnimationFrameId = null;
-
-		let vrSession = null;
-		let currentXrReferenceSpace = null; 
-
-		const preferredReferenceSpaces = [ 
-			'local-floor', 
-			'local',       
-			'viewer'       
-		];
-
-		enterVrBtn.addEventListener('click', enterVR);
-		exitVrBtn.addEventListener('click', exitVR);
-
-		updateXrStatus();
-
-		window.addEventListener('DOMContentLoaded', () => {
-			if (viewer && typeof viewer.onResize === 'function') {
-				viewer.onResize();
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
+				"@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.module.js"
 			}
-		});
+		}
 	</script>
+
+	<script type="module" src="app.js"></script>
 </body>
 </html>

@@ -45,7 +45,7 @@ h1 {
 }
 
 .viewer-container {
-	flex: 3;
+	flex: 3; /* Make it larger since we removed the separate panorama container */
 	border-radius: 12px;
 	overflow: hidden;
 	box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
@@ -53,11 +53,63 @@ h1 {
 	position: relative;
 }
 
-#viewer {
+#viewer, #panorama-viewer {
 	width: 100%;
 	height: 100%;
-	/* The canvas will be appended here by Three.js */
 	cursor: grab; /* Default cursor for dragging */
+}
+
+/* Override Photo Sphere Viewer styles to match our theme */
+#panorama-viewer .psv-container {
+	background: rgba(0, 0, 0, 0.8) !important;
+	border-radius: 12px;
+}
+
+#panorama-viewer .psv-navbar {
+	background: rgba(0, 0, 0, 0.8) !important;
+	border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+#panorama-viewer .psv-button {
+	background: rgba(255, 255, 255, 0.1) !important;
+	color: white !important;
+	border: none !important;
+	transition: all 0.3s ease !important;
+}
+
+#panorama-viewer .psv-button:hover {
+	background: rgba(67, 206, 162, 0.3) !important;
+}
+
+#panorama-viewer .psv-button--active {
+	background: rgba(67, 206, 162, 0.6) !important;
+}
+
+#panorama-viewer .psv-zoom {
+	background: rgba(0, 0, 0, 0.7) !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	border-radius: 8px !important;
+}
+
+#panorama-viewer .psv-zoom-range {
+	background: rgba(255, 255, 255, 0.2) !important;
+}
+
+#panorama-viewer .psv-zoom-range::-webkit-slider-thumb {
+	background: #43cea2 !important;
+}
+
+#panorama-viewer .psv-zoom-range::-moz-range-thumb {
+	background: #43cea2 !important;
+}
+
+#panorama-viewer .psv-loader {
+	background: rgba(0, 0, 0, 0.9) !important;
+}
+
+#panorama-viewer .psv-loader-canvas {
+	border: 3px solid rgba(255, 255, 255, 0.1) !important;
+	border-top-color: #43cea2 !important;
 }
 
 .controls {
@@ -121,6 +173,12 @@ h2 {
 	background: #555;
 	cursor: not-allowed;
 	opacity: 0.7;
+	transform: none;
+}
+
+.btn:disabled:hover {
+	transform: none;
+	box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-vr {
@@ -188,12 +246,17 @@ h2 {
 	color: #43cea2;
 }
 
+.instructions p:last-child {
+	margin-bottom: 0;
+}
+
 .footer {
 	text-align: center;
 	padding: 15px;
 	font-size: 0.95rem;
 	color: rgba(255, 255, 255, 0.7);
 	background: rgba(0, 0, 0, 0.3);
+	border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .loading {
@@ -211,6 +274,7 @@ h2 {
 	transition: opacity 0.5s;
 	opacity: 0; /* Initially hidden */
 	pointer-events: none; /* Initially not interactive */
+	border-radius: 12px;
 }
 
 .loading.visible {
@@ -237,6 +301,7 @@ h2 {
 	text-align: center;
 	max-width: 80%;
 	margin-bottom: 30px;
+	line-height: 1.4;
 }
 
 .progress-container {
@@ -253,6 +318,7 @@ h2 {
 	width: 0;
 	background: linear-gradient(to right, #43cea2, #185a9d);
 	transition: width 0.3s ease;
+	border-radius: 5px;
 }
 
 .reference-space {
@@ -262,22 +328,250 @@ h2 {
 	border-radius: 8px;
 	font-size: 0.95rem;
 	text-align: center;
+	border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-@media (max-width: 1000px) {
+/* Custom scrollbar for controls */
+.controls::-webkit-scrollbar {
+	width: 8px;
+}
+
+.controls::-webkit-scrollbar-track {
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 4px;
+}
+
+.controls::-webkit-scrollbar-thumb {
+	background: rgba(67, 206, 162, 0.6);
+	border-radius: 4px;
+}
+
+.controls::-webkit-scrollbar-thumb:hover {
+	background: rgba(67, 206, 162, 0.8);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
 	.container {
 		flex-direction: column;
-		max-height: none; /* Allow full scroll on mobile */
+		max-height: none; /* Allow full scroll on smaller screens */
 		overflow-y: auto;
+	}
+	
+	.viewer-container {
+		min-height: 50vh; /* Ensure viewer has good height */
+		flex: none;
 	}
 	
 	.controls {
 		max-width: 100%;
 		order: 2; /* Controls below viewer */
+		flex: none;
+		max-height: 40vh;
+	}
+}
+
+@media (max-width: 768px) {
+	body {
+		overflow-y: auto; /* Allow scrolling on mobile */
+	}
+	
+	.header {
+		padding: 15px;
+	}
+	
+	h1 {
+		font-size: 1.8rem;
+	}
+	
+	.subtitle {
+		font-size: 1rem;
+	}
+	
+	.container {
+		padding: 15px;
+		gap: 15px;
+		flex-direction: column;
 	}
 	
 	.viewer-container {
-		min-height: 50vh; /* Ensure viewer has some height */
-		order: 1; /* Viewer above controls */
+		min-height: 40vh;
+	}
+	
+	.controls {
+		padding: 15px;
+		gap: 15px;
+		max-height: none; /* Remove height restriction on mobile */
+	}
+	
+	.control-group {
+		padding: 15px;
+	}
+	
+	h2 {
+		font-size: 1.2rem;
+	}
+	
+	.btn {
+		padding: 12px 16px;
+		font-size: 1rem;
+	}
+	
+	.btn-vr {
+		padding: 14px 16px;
+		font-size: 1.1rem;
+	}
+	
+	.status {
+		padding: 12px;
+		font-size: 0.95rem;
+	}
+	
+	.instructions {
+		font-size: 0.9rem;
+		padding: 14px;
+	}
+	
+	.footer {
+		padding: 12px;
+		font-size: 0.9rem;
+	}
+	
+	.loading-text {
+		font-size: 1.1rem;
+		margin-bottom: 20px;
+	}
+	
+	.spinner {
+		width: 50px;
+		height: 50px;
+		border-width: 6px;
+		margin-bottom: 20px;
+	}
+}
+
+@media (max-width: 480px) {
+	.container {
+		padding: 10px;
+		gap: 10px;
+	}
+	
+	.viewer-container {
+		min-height: 35vh;
+	}
+	
+	.header {
+		padding: 10px;
+	}
+	
+	h1 {
+		font-size: 1.5rem;
+		margin-bottom: 5px;
+	}
+	
+	.subtitle {
+		font-size: 0.9rem;
+	}
+	
+	.control-group {
+		padding: 12px;
+	}
+	
+	.controls {
+		padding: 12px;
+		gap: 12px;
+	}
+	
+	.btn {
+		padding: 10px 14px;
+		font-size: 0.95rem;
+	}
+	
+	.btn-vr {
+		padding: 12px 14px;
+		font-size: 1rem;
+	}
+	
+	.status {
+		padding: 10px;
+		font-size: 0.9rem;
+		gap: 8px;
+	}
+	
+	.status-indicator {
+		width: 12px;
+		height: 12px;
+	}
+	
+	.instructions {
+		font-size: 0.85rem;
+		padding: 12px;
+		line-height: 1.5;
+	}
+	
+	.instructions p {
+		padding-left: 16px;
+	}
+	
+	.instructions p:before {
+		left: 6px;
+	}
+}
+
+/* High DPI / Retina Display Support */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+	.status-indicator {
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	
+	.spinner {
+		border-width: 6px;
+	}
+}
+
+/* Dark mode enhancements */
+@media (prefers-color-scheme: dark) {
+	/* Already dark by default, but we can enhance it */
+	body {
+		background: linear-gradient(135deg, #0a1a1f, #1a2f38, #243540);
+	}
+	
+	.status-ok {
+		box-shadow: 0 0 15px rgba(67, 206, 162, 0.4);
+	}
+	
+	.status-warning {
+		box-shadow: 0 0 15px rgba(238, 168, 73, 0.4);
+	}
+	
+	.status-error {
+		box-shadow: 0 0 15px rgba(255, 65, 108, 0.4);
+	}
+}
+
+/* Focus styles for accessibility */
+.btn:focus,
+#panorama-viewer .psv-button:focus {
+	outline: 2px solid #43cea2;
+	outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+	body {
+		background: white;
+		color: black;
+	}
+	
+	.container {
+		flex-direction: column;
+	}
+	
+	.viewer-container {
+		border: 2px solid #ccc;
+	}
+	
+	.controls {
+		display: none; /* Hide controls in print */
 	}
 }
