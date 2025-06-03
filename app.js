@@ -436,6 +436,98 @@ const enterVrBtn = document.getElementById('enter-vr');
 const exitVrBtn = document.getElementById('exit-vr');
 let initialPanoramaUrl = ''; // Store the initial URL to check for changes
 
+// Gallery elements - DECLARE THEM HERE
+const openGalleryBtn = document.getElementById('open-gallery-btn');
+const galleryModal = document.getElementById('gallery-modal');
+const galleryCloseButton = document.getElementById('gallery-close-button');
+const galleryItemsContainer = document.getElementById('gallery-items-container');
+let galleryData = [];
+
+// Function to load gallery data
+async function loadGalleryData() {
+	try {
+		const response = await fetch('gallery.json');
+		if (!response.ok) {
+			throw new Error(`HTTP error! status: ${response.status}`);
+		}
+		galleryData = await response.json();
+		return galleryData;
+	} catch (error) {
+		console.error("Could not load gallery data:", error);
+		if (galleryItemsContainer) {
+			galleryItemsContainer.innerHTML = '<p style="color: #ff416c;">Error loading gallery. Please check console.</p>';
+		}
+		return []; // Return empty array on error
+	}
+}
+
+// Function to create a single gallery item element
+function createGalleryItemElement(item) {
+	const itemDiv = document.createElement('div');
+	itemDiv.classList.add('gallery-item');
+	itemDiv.dataset.path = item.path;
+
+	const img = document.createElement('img');
+	img.src = item.thumbnail || 'placeholder_thumbnail.png'; // Use a placeholder if no thumbnail
+	img.alt = item.name;
+	img.onerror = () => { // Fallback if thumbnail fails to load
+		img.src = 'placeholder_thumbnail.png'; // Path to a generic placeholder
+		img.style.objectFit = 'contain'; // Adjust fit for placeholder
+	};
+
+	const nameH3 = document.createElement('h3');
+	nameH3.textContent = item.name;
+
+	const descP = document.createElement('p');
+	descP.textContent = item.description;
+
+	itemDiv.appendChild(img);
+	itemDiv.appendChild(nameH3);
+	itemDiv.appendChild(descP);
+
+	itemDiv.addEventListener('click', () => {
+		window.location.hash = `panorama=${item.path}`;
+		closeGalleryModal();
+	});
+
+	return itemDiv;
+}
+
+// Function to populate gallery
+function populateGallery(items) {
+	if (!galleryItemsContainer) return;
+	galleryItemsContainer.innerHTML = ''; // Clear previous items
+	if (items.length === 0 && galleryItemsContainer.textContent.includes('Error loading gallery')) {
+		// Do not clear error message if items are empty due to load failure
+	} else if (items.length === 0) {
+		galleryItemsContainer.innerHTML = '<p>No images found in the gallery.</p>';
+	} else {
+		items.forEach(item => {
+			galleryItemsContainer.appendChild(createGalleryItemElement(item));
+		});
+	}
+}
+
+// Functions to open and close gallery modal
+function openGalleryModal() {
+	if (!galleryModal) return;
+	if (galleryData.length === 0) { // If gallery data hasn't been loaded or failed
+		loadGalleryData().then(data => {
+			populateGallery(data);
+			galleryModal.style.display = 'block';
+		});
+	} else {
+		populateGallery(galleryData); // Repopulate in case it was loaded but modal closed
+		galleryModal.style.display = 'block';
+	}
+}
+
+function closeGalleryModal() {
+	if (galleryModal) {
+		galleryModal.style.display = 'none';
+	}
+}
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
 	initialPanoramaUrl = getPanoramaFromUrl();
@@ -443,8 +535,22 @@ document.addEventListener('DOMContentLoaded', () => {
 	initPanoramaViewer();
 	
 	// Setup event listeners
-	enterVrBtn.addEventListener('click', switchToVRMode);
-	exitVrBtn.addEventListener('click', exitVR);
+	if (enterVrBtn) enterVrBtn.addEventListener('click', switchToVRMode);
+	if (exitVrBtn) exitVrBtn.addEventListener('click', exitVR);
+
+	// Gallery event listeners
+	if (openGalleryBtn) {
+		openGalleryBtn.addEventListener('click', openGalleryModal);
+	}
+	if (galleryCloseButton) {
+		galleryCloseButton.addEventListener('click', closeGalleryModal);
+	}
+	// Close modal if user clicks outside of it
+	window.addEventListener('click', (event) => {
+		if (galleryModal && event.target === galleryModal) {
+			closeGalleryModal();
+		}
+	});
 	
 	// Check WebXR status
 	updateXrStatus();

@@ -43,6 +43,12 @@
 					</svg>
 					Exit VR Mode
 				</button>
+				<button id="open-gallery-btn" class="btn btn-gallery">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
+						<path d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4l2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z"/>
+					</svg>
+					Browse Gallery
+				</button>
 				
 				<div class="status">
 					<span class="status-indicator" id="xr-status-indicator"></span>
@@ -88,6 +94,17 @@
 	
 	<div class="footer">
 		<p>Photo Sphere Viewer VR Experience | Compatible with Oculus Quest and other WebXR devices</p>
+	</div>
+
+	<!-- Gallery Modal -->
+	<div id="gallery-modal" class="modal">
+		<div class="modal-content">
+			<span class="close-button" id="gallery-close-button">&times;</span>
+			<h2>Image Gallery</h2>
+			<div id="gallery-items-container">
+				<!-- Gallery items will be dynamically injected here -->
+			</div>
+		</div>
 	</div>
 
 	<script type="importmap">

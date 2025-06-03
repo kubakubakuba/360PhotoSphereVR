@@ -107,9 +107,14 @@ h1 {
 	background: rgba(0, 0, 0, 0.9) !important;
 }
 
-#panorama-viewer .psv-loader-canvas {
+/*#panorama-viewer .psv-loader-canvas {
 	border: 3px solid rgba(255, 255, 255, 0.1) !important;
 	border-top-color: #43cea2 !important;
+}*/
+
+#panorama-viewer .psv-loader-canvas {
+	z-index: 10;
+    background-color: rgba(0, 0, 0, 0);
 }
 
 .controls {
@@ -189,6 +194,10 @@ h2 {
 
 .btn-exit {
 	background: linear-gradient(to right, #ff416c, #ff4b2b);
+}
+
+.btn-gallery {
+	background: linear-gradient(to right, #8e44ad, #3498db);
 }
 
 .status {
@@ -330,6 +339,132 @@ h2 {
 	text-align: center;
 	border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* Gallery Modal Styles */
+.modal {
+	display: none; /* Hidden by default */
+	position: fixed;
+	z-index: 1000;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	overflow: auto;
+	background-color: rgba(0,0,0,0.7);
+	backdrop-filter: blur(5px);
+	animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+.modal-content {
+	background-color: #2c3e50;
+	margin: 10% auto;
+	padding: 30px;
+	border: 1px solid rgba(255,255,255,0.2);
+	width: 80%;
+	max-width: 900px;
+	border-radius: 12px;
+	box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+	position: relative;
+	animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+	from { transform: translateY(-50px); opacity: 0; }
+	to { transform: translateY(0); opacity: 1; }
+}
+
+.close-button {
+	color: #aaa;
+	float: right;
+	font-size: 32px;
+	font-weight: bold;
+	transition: color 0.3s ease;
+}
+
+.close-button:hover,
+.close-button:focus {
+	color: #43cea2;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.modal-content h2 {
+	margin-top: 0;
+	color: #43cea2;
+	border-bottom: 1px solid rgba(255,255,255,0.1);
+	padding-bottom: 15px;
+	margin-bottom: 20px;
+}
+
+#gallery-items-container {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+	gap: 20px;
+	max-height: 60vh;
+	overflow-y: auto;
+	padding-right: 10px; /* For scrollbar */
+}
+
+/* Custom scrollbar for gallery items */
+#gallery-items-container::-webkit-scrollbar {
+	width: 8px;
+}
+
+#gallery-items-container::-webkit-scrollbar-track {
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 4px;
+}
+
+#gallery-items-container::-webkit-scrollbar-thumb {
+	background: rgba(67, 206, 162, 0.6);
+	border-radius: 4px;
+}
+
+#gallery-items-container::-webkit-scrollbar-thumb:hover {
+	background: rgba(67, 206, 162, 0.8);
+}
+
+.gallery-item {
+	background: rgba(0,0,0,0.3);
+	border-radius: 8px;
+	padding: 15px;
+	cursor: pointer;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+	border: 1px solid rgba(255,255,255,0.1);
+}
+
+.gallery-item:hover {
+	transform: translateY(-5px);
+	box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+	border-color: #43cea2;
+}
+
+.gallery-item img {
+	width: 100%;
+	height: 150px;
+	object-fit: cover;
+	border-radius: 6px;
+	margin-bottom: 10px;
+	background-color: rgba(0,0,0,0.2); /* Placeholder bg if image fails */
+}
+
+.gallery-item h3 {
+	font-size: 1.1rem;
+	color: #ecf0f1;
+	margin-bottom: 5px;
+}
+
+.gallery-item p {
+	font-size: 0.9rem;
+	color: #bdc3c7;
+	line-height: 1.4;
+}
+
 
 /* Custom scrollbar for controls */
 .controls::-webkit-scrollbar {
