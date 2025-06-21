@@ -9,7 +9,7 @@ let currentXrReferenceSpace = null;
 let nonVrAnimationFrameId = null;
 
 const preferredReferenceSpaces = ['local-floor', 'local', 'viewer'];
-const DEFAULT_PANORAMA = 'DJI_0423.JPG';
+const DEFAULT_PANORAMA = 'DEFAULT.JPG';
 
 // Function to get panorama from URL hash
 function getPanoramaFromUrl() {
