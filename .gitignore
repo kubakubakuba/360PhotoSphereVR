@@ -10,3 +10,5 @@ thumb/
 *.webp
 *.bmp
 *.tiff
+
+gallery.json
