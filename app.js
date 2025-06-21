@@ -80,7 +80,7 @@ async function initVRViewer() {
 		const panoramaUrl = getPanoramaFromUrl() || DEFAULT_PANORAMA;
 		console.log('Creating VR Viewer instance...');
 		vrViewer = new ViewerClass({
-			container: 'viewer',
+			containerId: 'viewer', // Changed 'container' to 'containerId'
 			panorama: panoramaUrl,
 			caption: '360° VR Panorama Viewer'
 		});
@@ -590,11 +590,11 @@ document.addEventListener('DOMContentLoaded', () => {
 				initPanoramaViewer(); // Re-initialize with new panorama
 			}
 		} else if (!newPanoramaUrl && initialPanoramaUrl) {
-            // Hash was removed or panorama param removed, reload with default
-            console.log('Panorama URL removed from hash, reloading with default...');
-            initialPanoramaUrl = ''; // Reset stored URL
+			// Hash was removed or panorama param removed, reload with default
+			console.log('Panorama URL removed from hash, reloading with default...');
+			initialPanoramaUrl = ''; // Reset stored URL
 
-            if (isVRMode) {
+			if (isVRMode) {
 				exitVR().then(() => {
 					if (panoramaViewer && panoramaViewer.destroy) {
 						panoramaViewer.destroy();
@@ -607,12 +607,29 @@ document.addEventListener('DOMContentLoaded', () => {
 					panoramaViewer.destroy();
 					panoramaViewer = null;
 				}
-                if (vrViewer && vrViewer.destroy) {
+				if (vrViewer && vrViewer.destroy) {
 					vrViewer.destroy();
 					vrViewer = null;
 				}
 				initPanoramaViewer();
 			}
-        }
+		}
 	});
+
+	const vrViewerContainer = document.getElementById('viewer-container'); // Assuming 'viewer-container' is used for VR
+	if (vrViewerContainer) {
+		vrViewerContainer.addEventListener('exitvrrequest', () => {
+			console.log("App: Received exitvrrequest event.");
+			if (isVRMode && vrSession) {
+				exitVR();
+			}
+		});
+	}
 });
+function render() {
+	if (isVRMode && vrSession) {
+		vrSession.requestAnimationFrame(onAnimationFrame);
+	} else {
+		nonVrAnimationFrameId = requestAnimationFrame(render);
+	}
+}
