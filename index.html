@@ -5,12 +5,14 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>360° VR Photo Sphere Viewer</title>
 	<link rel="stylesheet" href="./style.css">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.css">
+	<!-- CDN Lib: <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.css"> -->
+	<link rel="stylesheet" href="./lib/photo-sphere-viewer/index.css">
 </head>
 <body>
 	<div class="header">
 		<h1>360° VR Photo Sphere Viewer</h1>
 		<p class="subtitle">Immersive Experience for Oculus Quest and WebXR Devices</p>
+		<!--<h2 id="panorama-title"></h2>-->
 	</div>
 	
 	<div class="container">
@@ -85,7 +87,7 @@
 					<p>Move your head to look around in VR.</p>
 					<p>Ensure your device supports WebXR for VR.</p>
 					<p>Requires HTTPS connection for VR functionality.</p>
-					<p><strong>When in VR, use Left/Right arrow keys to rotate the panorama.</strong></p>
+					<!--<p><strong>When in VR, use Left/Right arrow keys to rotate the panorama.</strong></p>-->
 					<p>You can load a custom panorama by adding <code>#panorama=IMAGE_URL</code> to the address bar.</p>
 				</div>
 			</div>
@@ -102,16 +104,24 @@
 			<span class="close-button" id="gallery-close-button">&times;</span>
 			<h2>Image Gallery</h2>
 			<div id="gallery-items-container">
-				<!-- Gallery items will be dynamically injected here -->
 			</div>
 		</div>
 	</div>
 
-	<script type="importmap">
+	<!-- <script type="importmap">
 		{
 			"imports": {
 				"three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
 				"@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.module.js"
+			}
+		}
+	</script> -->
+
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "./lib/three/three.module.js",
+				"@photo-sphere-viewer/core": "./lib/photo-sphere-viewer/index.module.js"
 			}
 		}
 	</script>
