@@ -19,39 +19,27 @@ export class Viewer {
 		this.vrRotationSpeed = 0.02;
 
 		this.isMouseDown = false;
-		// mouseX, mouseY, lastMouseX, lastMouseY are not strictly needed if only targetRotation is used
-		// this.mouseX = 0; 
-		// this.mouseY = 0;
 		this.lastMouseX = 0;
 		this.lastMouseY = 0;
 
 		// Gallery variables
 		this.galleryData = [];
 		this.galleryVisible = false;
-		this.galleryItems = []; // This will store all raycastable objects in the gallery (thumbnails + buttons)
-		this.galleryGroup = new THREE.Group(); // Parent group for all gallery elements
+		this.galleryItems = [];
+		this.galleryGroup = new THREE.Group();
 
 		this.galleryToggleTimeout = null;
-
-		// VR Controllers
-		this.controller1 = null;
-		this.controller2 = null;
-		this.controllerGrip1 = null;
-		this.controllerGrip2 = null;
-
-		// Gallery pagination and interaction
 		this.galleryCurrentPage = 0;
 		this.galleryItemsPerPage = 6;
-		this.galleryButtonSize = new THREE.Vector2(0.3, 0.1); // Adjusted for text
-		this.galleryButtonTextHeight = 32; // Font size for button text
+		this.galleryButtonSize = new THREE.Vector2(0.3, 0.1);
+		this.galleryButtonTextHeight = 32;
 		this.lastJoyY = [0, 0];
 		this.joyThreshold = 0.7;
 		this.canScrollTimeout = [null, null];
 
-		// Highlight properties
 		this.highlightedItem = null;
-		this.pointerRaycaster = new THREE.Raycaster(); // For hover detection
-		this.highlightMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 }); // Yellow border
+		this.pointerRaycaster = new THREE.Raycaster();
+		this.highlightMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
 
 		// Bound event handlers
 		this.boundOnMouseDown = this.onMouseDown.bind(this);
@@ -64,28 +52,22 @@ export class Viewer {
 		this.boundOnResize = this.onResize.bind(this);
 		this.boundOnKeyDown = this.onKeyDown.bind(this);
 		this.boundOnKeyUp = this.onKeyUp.bind(this);
-		// Controller bound handlers will be set in setupControllers
 
 		this.initViewer();
 	}
 
-	// Helper function to create text textures
 	createTextTexture(text, widthPx, heightPx, options = {}) {
 		const canvas = document.createElement('canvas');
 		canvas.width = widthPx;
 		canvas.height = heightPx;
 		const context = canvas.getContext('2d');
-
-		context.fillStyle = options.backgroundColor || 'rgba(0,0,0,0.7)'; // Semi-transparent dark background
+		context.fillStyle = options.backgroundColor || 'rgba(0,0,0,0.7)';
 		context.fillRect(0, 0, canvas.width, canvas.height);
-
 		context.font = options.font || `${this.galleryButtonTextHeight}px Arial`;
 		context.fillStyle = options.textColor || 'white';
 		context.textAlign = 'center';
 		context.textBaseline = 'middle';
-
 		context.fillText(text, canvas.width / 2, canvas.height / 2);
-
 		const texture = new THREE.CanvasTexture(canvas);
 		texture.needsUpdate = true;
 		return texture;
@@ -149,38 +131,28 @@ export class Viewer {
 		if (this.controller1) {
 			this.scene.add(this.controller1);
 			this.boundOnSelectStartC1 = (event) => {
-				console.log("Viewer: Controller 1 SELECTSTART event raw fire");
 				this.onSelectStart(this.controller1, event);
 			};
 			this.boundOnSqueezeStartC1 = (event) => {
-				console.log("Viewer: Controller 1 SQUEEZESTART event raw fire");
 				this.onSqueezeStart(event);
 			};
 			const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
 			const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -0.5)]);
 			this.controller1.add(new THREE.Line(lineGeometry, lineMaterial));
-			console.log("Controller 1 setup.");
-		} else {
-			console.warn("Controller 1 not available at setup.");
 		}
 
 		this.controller2 = this.renderer.xr.getController(1);
 		if (this.controller2) {
 			this.scene.add(this.controller2);
 			this.boundOnSelectStartC2 = (event) => {
-				console.log("Viewer: Controller 2 SELECTSTART event raw fire");
 				this.onSelectStart(this.controller2, event);
 			};
 			this.boundOnSqueezeStartC2 = (event) => {
-				console.log("Viewer: Controller 2 SQUEEZESTART event raw fire");
 				this.onSqueezeStart(event);
 			};
 			const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff }); 
 			const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -0.5)]);
 			this.controller2.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
-			console.log("Controller 2 setup.");
-		} else {
-			console.warn("Controller 2 not available at setup.");
 		}
 
 		this.controllerGrip1 = this.renderer.xr.getControllerGrip(0);
@@ -191,7 +163,6 @@ export class Viewer {
 
 	addEventListeners() {
 		console.log("Adding event listeners...");
-		// Non-VR listeners
 		this.container.addEventListener('mousedown', this.boundOnMouseDown);
 		this.container.addEventListener('mousemove', this.boundOnMouseMove);
 		this.container.addEventListener('mouseup', this.boundOnMouseUp);
@@ -202,63 +173,45 @@ export class Viewer {
 		window.addEventListener('resize', this.boundOnResize);
 		window.addEventListener('keydown', this.boundOnKeyDown);
 		window.addEventListener('keyup', this.boundOnKeyUp);
-		console.log("Keyboard listeners added.");
 
-		// VR Controller Events
 		if (this.controller1 && this.boundOnSelectStartC1 && this.boundOnSqueezeStartC1) {
 			this.controller1.addEventListener('selectstart', this.boundOnSelectStartC1);
 			this.controller1.addEventListener('squeezestart', this.boundOnSqueezeStartC1);
-			console.log("Controller 1 event listeners added.");
-		} else {
-			console.warn("Could not add listeners for Controller 1 (controller or bound handlers missing).");
 		}
 
 		if (this.controller2 && this.boundOnSelectStartC2 && this.boundOnSqueezeStartC2) {
 			this.controller2.addEventListener('selectstart', this.boundOnSelectStartC2);
 			this.controller2.addEventListener('squeezestart', this.boundOnSqueezeStartC2);
-			console.log("Controller 2 event listeners added.");
-		} else {
-			console.warn("Could not add listeners for Controller 2 (controller or bound handlers missing).");
 		}
 	}
 	
-	onSqueezeStart(event) { // Handles gallery toggle
-		// Debounce gallery toggle
+	onSqueezeStart(event) {
 		if (!this.galleryToggleTimeout) {
 			this.toggleGalleryVisibility();
 			this.galleryToggleTimeout = setTimeout(() => {
 				this.galleryToggleTimeout = null;
-			}, 300); // 300ms delay to prevent rapid toggling
+			}, 300);
 		}
 	}
 
 	onSelectStart(controller, event) {
 		try {
-			console.log("Viewer: onSelectStart triggered by a controller");
 			if (this.galleryVisible && controller) {
-				const raycaster = new THREE.Raycaster(); // Use a local raycaster for selection
+				const raycaster = new THREE.Raycaster();
 				const tempMatrix = new THREE.Matrix4();
-
 				tempMatrix.identity().extractRotation(controller.matrixWorld);
 				raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 				raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-
-				// Intersect with the items themselves, not recursively searching children of items
-				const intersects = raycaster.intersectObjects(this.galleryItems, false); 
-				console.log("Viewer: Raycast intersects in onSelectStart:", intersects.length);
+				const intersects = raycaster.intersectObjects(this.galleryItems, false);
 
 				if (intersects.length > 0) {
-					const intersectedObject = intersects[0].object; // The mesh itself
+					const intersectedObject = intersects[0].object;
 					if (intersectedObject.userData.path) {
-						console.log("Viewer: Gallery item selected with path:", intersectedObject.userData.path);
 						this.onGalleryItemSelected(intersectedObject.userData.path);
 					} else if (intersectedObject.userData.action) {
-						console.log("Viewer: Gallery action selected:", intersectedObject.userData.action);
 						this.handleGalleryAction(intersectedObject.userData.action);
 					}
 				}
-			} else {
-				console.log("Viewer: onSelectStart: Gallery not visible or controller missing.");
 			}
 		} catch (error) {
 			console.error("Error in onSelectStart:", error);
@@ -285,7 +238,6 @@ export class Viewer {
 			this.galleryCurrentPage++;
 			this.createGallery();
 		}
-		console.log("Viewer: Next Page. Current Page:", this.galleryCurrentPage);
 	}
 
 	goToPrevGalleryPage() {
@@ -293,15 +245,13 @@ export class Viewer {
 			this.galleryCurrentPage--;
 			this.createGallery();
 		}
-		console.log("Viewer: Prev Page. Current Page:", this.galleryCurrentPage);
 	}
 
 	requestExitVR() {
 		console.log("Viewer: Requesting VR Exit...");
-		if (this.container) { // Ensure container exists
-			this.container.dispatchEvent(new CustomEvent('exitvrrequest', { bubbles: true }));
-		}
-		this.toggleGalleryVisibility(); // Hide gallery
+		const event = new CustomEvent('exitvrrequest', { bubbles: true });
+		this.container.dispatchEvent(event);
+		this.toggleGalleryVisibility();
 	}
 
 	async loadGalleryData() {
@@ -316,8 +266,6 @@ export class Viewer {
 	}
 
 	createGallery() {
-		console.log("Viewer: Creating/refreshing gallery. Page:", this.galleryCurrentPage, "Visible:", this.galleryVisible);
-		
 		this.galleryItems.forEach(item => {
 			if (item.geometry) item.geometry.dispose();
 			if (item.material) {
@@ -331,26 +279,18 @@ export class Viewer {
 			this.galleryGroup.remove(this.galleryGroup.children[0]); 
 		}
 
-		if (!this.galleryData || this.galleryData.length === 0) {
-			console.warn('No gallery data to create gallery.');
-			return;
-		}
-
-		// Gallery position and orientation are now set in toggleGalleryVisibility
-		// this.galleryGroup.position.set(0, 1.6, -1.5); 
+		if (!this.galleryData || this.galleryData.length === 0) return;
 		this.galleryGroup.visible = this.galleryVisible;
 		if (!this.galleryGroup.parent) this.scene.add(this.galleryGroup);
 
 		const textureLoader = new THREE.TextureLoader();
-		
 		const startIndex = this.galleryCurrentPage * this.galleryItemsPerPage;
 		const endIndex = startIndex + this.galleryItemsPerPage;
 		const itemsToDisplay = this.galleryData.slice(startIndex, endIndex);
-		
 		const itemSize = 0.3; 
 		const spacing = 0.05; 
 		const itemsPerRow = 3;
-		const itemOffsetY = 0.25; // Adjusted offset for thumbnails
+		const itemOffsetY = 0.25;
 
 		itemsToDisplay.forEach((item, index) => {
 			const row = Math.floor(index / itemsPerRow);
@@ -366,97 +306,80 @@ export class Viewer {
 			});
 			const mesh = new THREE.Mesh(geometry, material);
 			mesh.position.set(x, y, 0);
-			mesh.userData = { path: item.path, isGalleryItem: true, originalMaterial: material.clone() }; // Store original material if needed later
+			mesh.userData = { path: item.path, isGalleryItem: true, originalMaterial: material.clone() };
 			this.galleryItems.push(mesh);
 			this.galleryGroup.add(mesh);
 		});
 
-		const buttonY = -0.25; // Adjusted Y position for buttons
+		const buttonY = -0.25;
 		const totalPages = Math.ceil(this.galleryData.length / this.galleryItemsPerPage);
-		const buttonTextureWidthPx = 256; // Canvas width for texture
-		const buttonTextureHeightPx = 64; // Canvas height for texture
+		const buttonTextureWidthPx = 256;
+		const buttonTextureHeightPx = 64;
 
-		// Previous Button
 		if (this.galleryCurrentPage > 0) {
 			const prevButtonGeo = new THREE.PlaneGeometry(this.galleryButtonSize.x, this.galleryButtonSize.y);
 			const prevTexture = this.createTextTexture("Prev", buttonTextureWidthPx, buttonTextureHeightPx, { backgroundColor: 'rgba(0, 123, 255, 0.7)'});
 			const prevButtonMat = new THREE.MeshBasicMaterial({ map: prevTexture, side: THREE.DoubleSide, transparent: true });
 			const prevButton = new THREE.Mesh(prevButtonGeo, prevButtonMat);
-			prevButton.position.set(-this.galleryButtonSize.x - spacing, buttonY, 0.01); // Slight Z offset
+			prevButton.position.set(-this.galleryButtonSize.x - spacing, buttonY, 0.01);
 			prevButton.userData = { action: 'prevPage', isGalleryButton: true, originalMaterial: prevButtonMat.clone() };
 			this.galleryItems.push(prevButton);
 			this.galleryGroup.add(prevButton);
 		}
 
-		// Exit VR Button
 		const exitButtonGeo = new THREE.PlaneGeometry(this.galleryButtonSize.x, this.galleryButtonSize.y);
 		const exitTexture = this.createTextTexture("Exit VR", buttonTextureWidthPx, buttonTextureHeightPx, { backgroundColor: 'rgba(220, 53, 69, 0.7)'});
 		const exitButtonMat = new THREE.MeshBasicMaterial({ map: exitTexture, side: THREE.DoubleSide, transparent: true });
 		const exitButton = new THREE.Mesh(exitButtonGeo, exitButtonMat);
-		exitButton.position.set(0, buttonY, 0.01); // Centered, slight Z offset
+		exitButton.position.set(0, buttonY, 0.01);
 		exitButton.userData = { action: 'exitVR', isGalleryButton: true, originalMaterial: exitButtonMat.clone() };
 		this.galleryItems.push(exitButton);
 		this.galleryGroup.add(exitButton);
 
-		// Next Button
 		if (this.galleryCurrentPage < totalPages - 1) {
 			const nextButtonGeo = new THREE.PlaneGeometry(this.galleryButtonSize.x, this.galleryButtonSize.y);
 			const nextTexture = this.createTextTexture("Next", buttonTextureWidthPx, buttonTextureHeightPx, { backgroundColor: 'rgba(0, 123, 255, 0.7)'});
 			const nextButtonMat = new THREE.MeshBasicMaterial({ map: nextTexture, side: THREE.DoubleSide, transparent: true });
 			const nextButton = new THREE.Mesh(nextButtonGeo, nextButtonMat);
-			nextButton.position.set(this.galleryButtonSize.x + spacing, buttonY, 0.01); // Slight Z offset
+			nextButton.position.set(this.galleryButtonSize.x + spacing, buttonY, 0.01);
 			nextButton.userData = { action: 'nextPage', isGalleryButton: true, originalMaterial: nextButtonMat.clone() };
 			this.galleryItems.push(nextButton);
 			this.galleryGroup.add(nextButton);
 		}
-		console.log("Viewer: Gallery created with items:", this.galleryItems.length, "on page", this.galleryCurrentPage);
 	}
 
 	addHighlight(item) {
 		if (!item || item.userData.highlightBorder) return;
-
-		// Ensure item has geometry
-		if (!item.geometry) {
-			console.warn("Viewer: Item has no geometry to create highlight border.", item);
-			return;
-		}
+		if (!item.geometry) return;
 
 		const edges = new THREE.EdgesGeometry(item.geometry);
 		const line = new THREE.LineSegments(edges, this.highlightMaterial);
-		line.renderOrder = 1; // Attempt to render on top
-		line.userData.isHighlight = true; // Mark this as a highlight object
-
+		line.renderOrder = 1;
+		line.userData.isHighlight = true;
 		item.userData.highlightBorder = line;
-		item.add(line); // Add border as a child of the item
-		// console.log("Viewer: Added highlight to", item.userData.path || item.userData.action);
+		item.add(line);
 	}
 
 	removeHighlight(item) {
 		if (item && item.userData.highlightBorder) {
 			item.remove(item.userData.highlightBorder);
 			item.userData.highlightBorder.geometry.dispose();
-			// Material is shared (this.highlightMaterial), so don't dispose it here unless it's unique per highlight
 			item.userData.highlightBorder = null;
-			// console.log("Viewer: Removed highlight from", item.userData.path || item.userData.action);
 		}
 	}
 
 	onGalleryItemSelected(path) {
-		// ... (from previous correct version)
 		console.log('Viewer: Selected panorama:', path);
 		this.loadNewPanorama(path);
-		if (this.galleryVisible) {
-			this.toggleGalleryVisibility(); 
-		}
+		if (this.galleryVisible) this.toggleGalleryVisibility(); 
 	}
 
 	async loadNewPanorama(path) {
-		// ... (from previous correct version)
 		const loader = new THREE.TextureLoader();
 		loader.load(
 			path,
 			(texture) => {
-				console.log('New VR Viewer texture loaded successfully');
+				console.log('New VR texture loaded successfully');
 				texture.minFilter = THREE.LinearMipmapLinearFilter;
 				texture.magFilter = THREE.LinearFilter;
 				texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -474,34 +397,19 @@ export class Viewer {
 
 	toggleGalleryVisibility() {
 		this.galleryVisible = !this.galleryVisible;
-		console.log('Viewer: Toggling gallery visibility to:', this.galleryVisible);
-
 		if (this.galleryVisible) {
-			// Position gallery in front of the camera
-			const distance = 1.5; // How far in front the gallery should appear
+			const distance = 1.5;
 			const cameraDirection = new THREE.Vector3();
 			this.camera.getWorldDirection(cameraDirection);
-			
 			const galleryPosition = new THREE.Vector3();
 			galleryPosition.copy(this.camera.position).add(cameraDirection.multiplyScalar(distance));
-			
 			this.galleryGroup.position.copy(galleryPosition);
-			
-			// Orient gallery to face the camera, but keep its Y-axis aligned with world's Y
-			// Store current camera Y rotation
-			const currentCameraQuaternion = this.camera.quaternion.clone();
-			// Create a target for the gallery to look at, slightly behind the camera along its view direction
-			// This helps in making the gallery face the camera more directly.
-			const lookAtTarget = new THREE.Vector3().copy(this.camera.position).sub(cameraDirection.multiplyScalar(0.1)); // cameraDirection was already multiplied
+			const lookAtTarget = new THREE.Vector3().copy(this.camera.position).sub(cameraDirection.multiplyScalar(0.1));
 			this.galleryGroup.lookAt(lookAtTarget);
-
-
 			this.galleryCurrentPage = 0; 
 			this.createGallery(); 
-		} else {
-			if (this.galleryGroup) {
-				this.galleryGroup.visible = false;
-			}
+		} else if (this.galleryGroup) {
+			this.galleryGroup.visible = false;
 		}
 	}
 
@@ -560,11 +468,9 @@ export class Viewer {
 	}
 
 	onKeyDown(event) {
-		// ... (from previous correct version, including 'G' key for onSqueezeStart)
 		try {
 			if (event.code === 'KeyG') {
 				if (event.repeat) return;
-				console.log("Viewer: G key pressed - simulating squeeze start for gallery toggle");
 				this.onSqueezeStart(); 
 			}
 			if (!this.renderer.xr.isPresenting) {
@@ -579,7 +485,6 @@ export class Viewer {
 	}
 
 	onKeyUp(event) {
-		// ... (from previous correct version)
 		if (!this.renderer.xr.isPresenting) {
 			switch (event.code) {
 				case 'ArrowLeft': this.isRotatingLeft = false; break;
@@ -589,25 +494,21 @@ export class Viewer {
 	}
 
 	onResize() {
-		// ... (from previous correct version)
 		if (!this.renderer || !this.camera) return;
 		const width = this.container.clientWidth;
 		const height = this.container.clientHeight;
 		this.camera.aspect = width / height;
 		this.camera.updateProjectionMatrix();
 		this.renderer.setSize(width, height);
-		console.log("Viewer: Resized viewer to:", width, height);
 	}
 
 	render() {
 		try {
 			if (!this.renderer || !this.scene || !this.camera) return;
-
-			let needsRender = true; // Flag to check if rendering is needed
+			let needsRender = true;
 
 			if (this.renderer.xr.isPresenting) {
 				if (this.galleryVisible) {
-					// Joystick scrolling logic (no changes here)
 					for (let i = 0; i < 2; i++) {
 						const controller = i === 0 ? this.controller1 : this.controller2;
 						if (controller && controller.gamepad && controller.gamepad.axes.length > 3) {
@@ -625,9 +526,8 @@ export class Viewer {
 						}
 					}
 
-					// Hover highlight logic
 					let pointingController = null;
-					if (this.controller1 && this.controller1.visible) pointingController = this.controller1; // Prefer controller1 if visible
+					if (this.controller1 && this.controller1.visible) pointingController = this.controller1;
 					else if (this.controller2 && this.controller2.visible) pointingController = this.controller2;
 
 					if (pointingController) {
@@ -637,10 +537,8 @@ export class Viewer {
 						this.pointerRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
 						const intersects = this.pointerRaycaster.intersectObjects(this.galleryItems, false);
-
 						let currentlyIntersectedItem = null;
 						if (intersects.length > 0) {
-							// Find the first actual gallery item or button, not a highlight border itself
 							for (const intersect of intersects) {
 								if (intersect.object && (intersect.object.userData.isGalleryItem || intersect.object.userData.isGalleryButton)) {
 									currentlyIntersectedItem = intersect.object;
@@ -658,35 +556,32 @@ export class Viewer {
 							this.addHighlight(currentlyIntersectedItem);
 							this.highlightedItem = currentlyIntersectedItem;
 						}
-					} else if (this.highlightedItem) { // No active pointing controller, remove highlight
+					} else if (this.highlightedItem) {
 						this.removeHighlight(this.highlightedItem);
 						this.highlightedItem = null;
 					}
-				} else if (this.highlightedItem) { // Gallery not visible, remove highlight
+				} else if (this.highlightedItem) {
 					this.removeHighlight(this.highlightedItem);
 					this.highlightedItem = null;
 				}
-			} else { // Not in VR
-				if (this.highlightedItem) { // Remove highlight if exiting VR or gallery closed
+			} else {
+				if (this.highlightedItem) {
 					this.removeHighlight(this.highlightedItem);
 					this.highlightedItem = null;
 				}
-				// Non-VR rotation update
 				if (this.sphere) {
 					this.sphere.rotation.y += (this.targetRotationY - this.sphere.rotation.y) * 0.1;
 					this.sphere.rotation.x += (this.targetRotationX - this.sphere.rotation.x) * 0.1;
+					if (this.isRotatingLeft) this.sphere.rotation.y += this.vrRotationSpeed;
+					if (this.isRotatingRight) this.sphere.rotation.y -= this.vrRotationSpeed;
 				}
-				if (this.isRotatingLeft) this.sphere.rotation.y += this.vrRotationSpeed;
-				if (this.isRotatingRight) this.sphere.rotation.y -= this.vrRotationSpeed;
 			}
 
-			if (needsRender) {
-				this.renderer.render(this.scene, this.camera);
-			}
+			if (needsRender) this.renderer.render(this.scene, this.camera);
 		} catch (error) {
 			console.error("Error in Viewer.render():", error);
 			if (this.renderer && this.renderer.xr && this.renderer.xr.getSession()) {
-				console.error("Attempting to end XR session due to render error.");
+				console.error("Attempting to end XR session due to render error");
 				this.renderer.xr.getSession().end().catch(e => console.error("Error ending session:", e));
 			}
 		}
@@ -699,32 +594,20 @@ export class Viewer {
 		if (indicator) indicator.className = `status-indicator status-${type}`;
 	}
 
-	// Ensure this method exists and is not commented out
 	setReferenceSpaceInfo(info) {
-		const element = document.getElementById('reference-space'); // Make sure 'reference-space' element exists in your HTML
-		if (element) {
-			element.textContent = `Reference Space: ${info}`;
-		} else {
-			console.warn("Element with ID 'reference-space' not found for setReferenceSpaceInfo.");
-		}
+		const element = document.getElementById('reference-space');
+		if (element) element.textContent = `Reference Space: ${info}`;
 	}
 
-	updateCameraOrientation(x, y, z, status = 'ok') { // Example of another utility function
+	updateCameraOrientation(x, y, z, status = 'ok') {
 		const statusElement = document.getElementById('camera-status');
-		if (statusElement) {
-			statusElement.textContent = `Camera: X:${x.toFixed(2)} Y:${y.toFixed(2)} Z:${z.toFixed(2)}`;
-		}
+		if (statusElement) statusElement.textContent = `Camera: X:${x.toFixed(2)} Y:${y.toFixed(2)} Z:${z.toFixed(2)}`;
 		const indicator = document.getElementById('camera-status-indicator');
-		if (indicator) {
-			indicator.className = `status-indicator status-${status}`;
-		}
+		if (indicator) indicator.className = `status-indicator status-${status}`;
 	}
-
-	// ... other utility functions like showVrLoading, hideVrLoading, updateProgress ...
 
 	destroy() {
 		console.log("Destroying VR Viewer...");
-		// Remove controller event listeners using the stored bound handlers
 		if (this.controller1) {
 			if (this.boundOnSelectStartC1) this.controller1.removeEventListener('selectstart', this.boundOnSelectStartC1);
 			if (this.boundOnSqueezeStartC1) this.controller1.removeEventListener('squeezestart', this.boundOnSqueezeStartC1);
@@ -734,7 +617,6 @@ export class Viewer {
 			if (this.boundOnSqueezeStartC2) this.controller2.removeEventListener('squeezestart', this.boundOnSqueezeStartC2);
 		}
 
-		// Remove general listeners using the stored bound handlers
 		this.container.removeEventListener('mousedown', this.boundOnMouseDown);
 		this.container.removeEventListener('mousemove', this.boundOnMouseMove);
 		this.container.removeEventListener('mouseup', this.boundOnMouseUp);
@@ -745,37 +627,36 @@ export class Viewer {
 		window.removeEventListener('resize', this.boundOnResize);
 		window.removeEventListener('keydown', this.boundOnKeyDown);
 		window.removeEventListener('keyup', this.boundOnKeyUp);
-		console.log("General event listeners removed.");
 
-		// Remove any active highlight
 		if (this.highlightedItem) {
 			this.removeHighlight(this.highlightedItem);
 			this.highlightedItem = null;
 		}
-		// Dispose shared highlight material if it's not used elsewhere
 		if (this.highlightMaterial) {
 			this.highlightMaterial.dispose();
 			this.highlightMaterial = null;
 		}
 
-
-		// Dispose Three.js objects
 		if (this.renderer) {
+			console.log("Disposing renderer and removing DOM element");
+			this.renderer.setAnimationLoop(null);
 			this.renderer.dispose();
 			if (this.container && this.renderer.domElement && this.container.contains(this.renderer.domElement)) {
 				this.container.removeChild(this.renderer.domElement);
 			}
 			this.renderer = null;
 		}
+
 		if (this.sphere) {
 			if (this.sphere.material) {
 				if (this.sphere.material.map) this.sphere.material.map.dispose();
 				this.sphere.material.dispose();
 			}
 			if (this.sphere.geometry) this.sphere.geometry.dispose();
-			if (this.scene) this.scene.remove(this.sphere); // Check if scene exists
+			if (this.scene) this.scene.remove(this.sphere);
 			this.sphere = null;
 		}
+
 		if (this.galleryGroup) {
 			this.galleryItems.forEach(item => {
 				if (item.geometry) item.geometry.dispose();
@@ -788,22 +669,20 @@ export class Viewer {
 			this.galleryItems = [];
 			if (this.galleryGroup.parent) this.galleryGroup.parent.remove(this.galleryGroup);
 		}
+
 		if(this.controller1 && this.controller1.parent) this.controller1.parent.remove(this.controller1);
 		if(this.controller2 && this.controller2.parent) this.controller2.parent.remove(this.controller2);
 		if(this.controllerGrip1 && this.controllerGrip1.parent) this.controllerGrip1.parent.remove(this.controllerGrip1);
 		if(this.controllerGrip2 && this.controllerGrip2.parent) this.controllerGrip2.parent.remove(this.controllerGrip2);
 
-		// Clear timeouts for joystick scroll debounce
 		if (this.canScrollTimeout) {
 			clearTimeout(this.canScrollTimeout[0]);
 			clearTimeout(this.canScrollTimeout[1]);
 		}
 
-
 		this.scene = null;
 		this.camera = null;
-		
-		console.log('VR Viewer destroyed and resources cleaned up.');
+		console.log('VR Viewer destroyed');
 	}
 }
 
