@@ -6,15 +6,13 @@ let vrViewer = null;
 let isVRMode = false;
 let vrSession = null;
 let currentXrReferenceSpace = null;
-// Removed nonVrAnimationFrameId as a general render loop isn't needed here;
-// PhotoSphereViewer and Three.js XR manager handle their own loops.
 
 const preferredReferenceSpaces = ['local-floor', 'local', 'viewer'];
 const DEFAULT_PANORAMA = 'DEFAULT.JPG';
 
 // Function to get panorama from URL hash
 function getPanoramaFromUrl() {
-	const hash = window.location.hash.substring(1); // Remove #
+	const hash = window.location.hash.substring(1);
 	const params = new URLSearchParams(hash);
 	return params.get('panorama');
 }
@@ -66,7 +64,6 @@ async function initVRViewer() {
 
 		let ViewerClass;
 		try {
-			// Attempt to import the VR Viewer module (assuming viewer.js is in the same directory)
 			const module = await import('./viewer.js');
 			ViewerClass = module.Viewer || module.default;
 		} catch (importError) {
@@ -96,39 +93,32 @@ async function initVRViewer() {
 
 // Switch to VR mode
 async function switchToVRMode() {
-	if (isVRMode) return; // Already in VR mode
+	if (isVRMode) return;
 
 	try {
 		updateStatus('session-status', 'Switching to VR mode...', 'warning');
 
-		// Step 1: Destroy the current Photo Sphere Viewer instance
 		if (panoramaViewer) {
-			panoramaViewer.destroy(); // Properly release resources
-			panoramaViewer = null; // Clear the reference
-			console.log('Photo Sphere Viewer destroyed before entering VR.');
+			console.log('Destroying Photo Sphere Viewer before entering VR');
+			panoramaViewer.destroy();
+			panoramaViewer = null;
 		}
 
-		// Hide Photo Sphere Viewer container and show VR Viewer container
 		document.getElementById('panorama-viewer').style.display = 'none';
 		document.getElementById('viewer').style.display = 'block';
 
-		// Initialize VR viewer if not already done
 		if (!vrViewer) {
 			await initVRViewer();
-			// Give a moment for the VR viewer to be ready for the session
 			await new Promise(resolve => setTimeout(resolve, 500));
 		}
 
 		isVRMode = true;
-		console.log('Switched to VR mode flag set.');
-
-		// Now, proceed to enter the WebXR immersive session
+		console.log('Switched to VR mode flag set');
 		await enterVR();
 
 	} catch (error) {
 		console.error('Error switching to VR mode:', error);
 		updateStatus('session-status', `VR Switch Error: ${error.message}`, 'error');
-		// Fallback to panorama mode if VR entry fails
 		switchToPanoramaMode();
 	}
 }
@@ -137,33 +127,31 @@ async function switchToVRMode() {
 function switchToPanoramaMode() {
 	console.log('Switching to Panorama mode');
 
-	// Hide VR Viewer container
 	document.getElementById('viewer').style.display = 'none';
 
-	// Step 2: Cleanup VR viewer if it exists and release its animation loop
 	if (vrViewer) {
-		if (vrViewer.destroy) { // Assuming vrViewer has a destroy method
-			console.log("Destroying VR viewer instance.");
-			vrViewer.destroy();
-		}
+		console.log("Destroying VR viewer instance");
+		vrViewer.destroy();
 		vrViewer = null;
 	}
 
-	// Step 3: Re-initialize Photo Sphere Viewer if it was destroyed
-	if (!panoramaViewer) {
-		initPanoramaViewer();
-		console.log('Photo Sphere Viewer re-initialized for non-VR display.');
+	const viewerContainer = document.getElementById('viewer');
+	while (viewerContainer.firstChild) {
+		viewerContainer.removeChild(viewerContainer.firstChild);
 	}
 
-	// Show Photo Sphere Viewer container
-	document.getElementById('panorama-viewer').style.display = 'block';
+	if (!panoramaViewer) {
+		console.log('Initializing Photo Sphere Viewer for non-VR display');
+		initPanoramaViewer();
+	}
 
-	// Ensure panoramaViewer resizes and re-renders after being shown
-	// A small delay can help ensure the display property has taken effect
+	const panoramaContainer = document.getElementById('panorama-viewer');
+	panoramaContainer.style.display = 'block';
+
 	if (panoramaViewer) {
 		setTimeout(() => {
+			console.log('Resizing Photo Sphere Viewer');
 			panoramaViewer.resize();
-			console.log('Photo Sphere Viewer resized after re-showing.');
 		}, 100);
 	}
 
@@ -173,6 +161,7 @@ function switchToPanoramaMode() {
 
 // VR Functions
 async function enterVR() {
+	console.log('Attempting to enter VR...');
 	if (!vrViewer || !vrViewer.renderer || !vrViewer.renderer.xr) {
 		updateStatus('session-status', 'Error: VR Renderer not ready for session.', 'error');
 		console.error("VR Viewer, Renderer, or XR module not initialized for session.");
@@ -182,7 +171,6 @@ async function enterVR() {
 	updateStatus('session-status', 'Attempting to start VR session...', 'warning');
 	showVrLoading('Initializing VR Experience...');
 	updateProgress(10, 'Checking VR capabilities...');
-	console.log('Attempting to enter VR...');
 
 	try {
 		if (!navigator.xr) {
@@ -201,7 +189,6 @@ async function enterVR() {
 		vrSession = session;
 		console.log('XR session obtained:', session);
 
-		// Crucial: Attach the 'end' event listener to the session
 		session.addEventListener('end', onXRSessionEnded);
 		console.log('Attached "end" event listener to XR session.');
 
@@ -219,11 +206,11 @@ async function enterVR() {
 				if (refSpace) {
 					currentXrReferenceSpace = refSpace;
 					selectedSpaceType = type;
-					console.log(`Successfully obtained native reference space: ${type}`, currentXrReferenceSpace);
+					console.log(`Successfully obtained native reference space: ${type}`);
 					break;
 				}
 			} catch (e) {
-				console.warn(`Native reference space type ${type} not supported or failed: ${e.message}`);
+				console.warn(`Native reference space type ${type} not supported: ${e.message}`);
 			}
 		}
 
@@ -233,26 +220,20 @@ async function enterVR() {
 		vrViewer.setReferenceSpaceInfo(selectedSpaceType);
 		updateProgress(50, `Using reference space: ${selectedSpaceType}`);
 
-		// Set the reference space type for the Three.js XR manager
 		vrViewer.renderer.xr.setReferenceSpaceType(selectedSpaceType);
 		console.log(`Three.js WebXRManager referenceSpaceType set to: ${selectedSpaceType}`);
 
 		updateProgress(60, 'Initializing Three.js XR session...');
-		// Set the XR session with the Three.js XR manager
 		await vrViewer.renderer.xr.setSession(session);
 		console.log('Three.js XR session has been set.');
 
-		// Add keyboard listeners for VR rotation
 		window.addEventListener('keydown', vrViewer.onKeyDown.bind(vrViewer));
 		window.addEventListener('keyup', vrViewer.onKeyUp.bind(vrViewer));
 
 		updateProgress(80, 'Starting VR rendering loop...');
-		// Start the Three.js XR animation loop
 		vrViewer.renderer.setAnimationLoop((timestamp, frame) => {
-			if (!frame) {
-				return; // No frame available yet
-			}
-			// Apply keyboard rotation if active
+			if (!frame) return;
+			
 			if (vrViewer.isRotatingLeft) {
 				vrViewer.sphere.rotation.y += vrViewer.vrRotationSpeed;
 			}
@@ -260,7 +241,6 @@ async function enterVR() {
 				vrViewer.sphere.rotation.y -= vrViewer.vrRotationSpeed;
 			}
 
-			// Update camera orientation and render the scene
 			const rotation = vrViewer.camera.rotation;
 			vrViewer.updateCameraOrientation(rotation.x, rotation.y, rotation.z);
 			vrViewer.render();
@@ -272,7 +252,6 @@ async function enterVR() {
 		updateStatus('session-status', 'VR session active', 'ok');
 		updateProgress(100, 'VR Ready!');
 
-		// Hide loading screen after a short delay
 		setTimeout(() => {
 			hideVrLoading();
 		}, 1000);
@@ -285,35 +264,29 @@ async function enterVR() {
 
 		setTimeout(() => {
 			hideVrLoading();
-			switchToPanoramaMode(); // Return to panorama mode on error
+			switchToPanoramaMode();
 		}, 4000);
 
-		// Ensure session is ended if it was partially started during an error
-		if (vrSession) {
+		if (vrSession && !vrSession.ended) {
 			try {
-				if (vrSession.ended === false) {
-					await vrSession.end();
-				}
+				console.log('Attempting to end session during error handling');
+				await vrSession.end();
 			} catch (endError) {
-				console.warn('Error trying to end partially started session during error handling:', endError);
+				console.warn('Error ending session during error handling:', endError);
 			}
 		}
-		// Always call onXRSessionEnded to ensure cleanup if an error occurs before session.end()
 		onXRSessionEnded();
 	}
 }
 
-// Function called when the XR session ends (either by app or UA)
+// Function called when the XR session ends
 function onXRSessionEnded() {
-	console.log('Cleaning up after XR session ended.');
-	// Disable Three.js XR manager and stop its animation loop
+	console.log('onXRSessionEnded called');
+	
 	if (vrViewer && vrViewer.renderer && vrViewer.renderer.xr) {
+		console.log('Stopping Three.js animation loop');
+		vrViewer.renderer.setAnimationLoop(null);
 		vrViewer.renderer.xr.enabled = false;
-		// Set the animation loop to null to stop Three.js rendering
-		if (vrViewer.renderer.setAnimationLoop) {
-			vrViewer.renderer.setAnimationLoop(null);
-			console.log('Three.js XR animation loop stopped.');
-		}
 	}
 
 	enterVrBtn.disabled = false;
@@ -321,12 +294,8 @@ function onXRSessionEnded() {
 	updateStatus('session-status', 'No active VR session');
 	setReferenceSpaceInfo('Not set');
 
-	// Clear global references to XR session and reference space
-	vrSession = null;
-	currentXrReferenceSpace = null;
-
-	// Remove keyboard listeners when exiting VR
 	if (vrViewer) {
+		console.log('Removing keyboard listeners');
 		window.removeEventListener('keydown', vrViewer.onKeyDown);
 		window.removeEventListener('keyup', vrViewer.onKeyUp);
 		vrViewer.isRotatingLeft = false;
@@ -335,116 +304,80 @@ function onXRSessionEnded() {
 
 	hideVrLoading();
 
-	// Switch back to panorama mode, which will re-initialize Photo Sphere Viewer.
-	// Added a small delay here to give the browser more time to release XR resources fully.
-	setTimeout(() => {
-		switchToPanoramaMode();
-		console.log('Called switchToPanoramaMode after a short delay.');
-	}, 200); // 200ms delay
+	vrSession = null;
+	currentXrReferenceSpace = null;
 	
-	console.log('Cleaned up XR session resources.');
+	console.log('Calling switchToPanoramaMode from onXRSessionEnded');
+	switchToPanoramaMode();
 }
 
 // Function to explicitly exit VR
 async function exitVR() {
-	console.log('Attempting to exit VR...');
+	console.log('exitVR called');
 	showVrLoading('Exiting VR...');
 	
-	// Disable buttons immediately to prevent multiple calls during transition
 	enterVrBtn.disabled = true;
 	exitVrBtn.disabled = true;
 
-	if (vrSession) {
+	if (vrSession && !vrSession.ended) {
 		try {
-			if (vrSession.ended === false) {
-				console.log('Calling vrSession.end()...');
-				await vrSession.end(); // Explicitly end the WebXR session
-				console.log('VR session.end() resolved.');
-			} else {
-				console.log('VR session was already ended, proceeding with cleanup.');
-				// If session was already ended, directly call onXRSessionEnded to ensure cleanup
-				onXRSessionEnded();
-			}
+			console.log('Ending VR session');
+			await vrSession.end();
+			console.log('VR session ended successfully');
 		} catch (e) {
 			console.error('Error ending VR session:', e);
-			// Even if there's an error ending, we must proceed with cleanup
-			onXRSessionEnded();
 		}
 	} else {
-		console.log('No active VR session to exit, performing cleanup.');
-		// If no session was active, just perform cleanup
-		onXRSessionEnded();
+		console.log('No active VR session to end');
 	}
+
+	console.log('Calling onXRSessionEnded from exitVR');
+	onXRSessionEnded();
 }
 
 // Helper functions for UI status updates
 function updateStatus(elementId, message, type = '') {
 	const element = document.getElementById(elementId);
 	const indicator = document.getElementById(elementId + '-indicator');
-
-	if (element) {
-		element.textContent = message;
-	}
-
-	if (indicator) {
-		indicator.className = `status-indicator status-${type}`;
-	}
+	if (element) element.textContent = message;
+	if (indicator) indicator.className = `status-indicator status-${type}`;
 }
 
 function setReferenceSpaceInfo(info) {
 	const element = document.getElementById('reference-space');
-	if (element) {
-		element.textContent = `Reference Space: ${info}`;
-	}
+	if (element) element.textContent = `Reference Space: ${info}`;
 }
 
 function updateProgress(percent, text) {
 	const progressBar = document.getElementById('progress-bar');
 	const loadingText = document.getElementById('loading-text');
-
-	if (progressBar) {
-		progressBar.style.width = percent + '%';
-	}
-
-	if (loadingText && text) {
-		loadingText.textContent = text;
-	}
+	if (progressBar) progressBar.style.width = percent + '%';
+	if (loadingText && text) loadingText.textContent = text;
 }
 
 function showVrLoading(text) {
 	const loading = document.getElementById('vr-loading');
 	const loadingText = document.getElementById('loading-text');
-
-	if (loadingText && text) {
-		loadingText.textContent = text;
-	}
-
-	if (loading) {
-		loading.classList.add('visible');
-	}
+	if (loadingText && text) loadingText.textContent = text;
+	if (loading) loading.classList.add('visible');
 }
 
 function hideVrLoading() {
 	const loading = document.getElementById('vr-loading');
-	if (loading) {
-		loading.classList.remove('visible');
-	}
+	if (loading) loading.classList.remove('visible');
 }
 
 function updateXrStatus() {
 	const statusElem = document.getElementById('xr-status');
 	const indicator = document.getElementById('xr-status-indicator');
-
 	if (!navigator.xr) {
 		statusElem.textContent = 'WebXR API not available in this browser.';
 		indicator.className = 'status-indicator status-error';
 		enterVrBtn.disabled = true;
 		return;
 	}
-
 	indicator.className = 'status-indicator status-warning';
 	statusElem.textContent = 'Checking WebXR immersive-vr support...';
-
 	setTimeout(() => {
 		navigator.xr.isSessionSupported('immersive-vr')
 			.then((supported) => {
@@ -470,7 +403,7 @@ function updateXrStatus() {
 // DOM elements and event listeners
 const enterVrBtn = document.getElementById('enter-vr');
 const exitVrBtn = document.getElementById('exit-vr');
-let initialPanoramaUrl = ''; // Store the initial URL to check for changes
+let initialPanoramaUrl = '';
 
 // Gallery elements
 const openGalleryBtn = document.getElementById('open-gallery-btn');
@@ -483,9 +416,7 @@ let galleryData = [];
 async function loadGalleryData() {
 	try {
 		const response = await fetch('gallery.json');
-		if (!response.ok) {
-			throw new Error(`HTTP error! status: ${response.status}`);
-		}
+		if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 		galleryData = await response.json();
 		return galleryData;
 	} catch (error) {
@@ -493,7 +424,7 @@ async function loadGalleryData() {
 		if (galleryItemsContainer) {
 			galleryItemsContainer.innerHTML = '<p style="color: #ff416c;">Error loading gallery. Please check console.</p>';
 		}
-		return []; // Return empty array on error
+		return [];
 	}
 }
 
@@ -504,11 +435,11 @@ function createGalleryItemElement(item) {
 	itemDiv.dataset.path = item.path;
 
 	const img = document.createElement('img');
-	img.src = item.thumbnail || 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail'; // Use a placeholder if no thumbnail
+	img.src = item.thumbnail || 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail';
 	img.alt = item.name;
-	img.onerror = () => { // Fallback if thumbnail fails to load
-		img.src = 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail'; // Path to a generic placeholder
-		img.style.objectFit = 'contain'; // Adjust fit for placeholder
+	img.onerror = () => {
+		img.src = 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail';
+		img.style.objectFit = 'contain';
 	};
 
 	const nameH3 = document.createElement('h3');
@@ -532,9 +463,9 @@ function createGalleryItemElement(item) {
 // Function to populate gallery
 function populateGallery(items) {
 	if (!galleryItemsContainer) return;
-	galleryItemsContainer.innerHTML = ''; // Clear previous items
+	galleryItemsContainer.innerHTML = '';
 	if (items.length === 0 && galleryItemsContainer.textContent.includes('Error loading gallery')) {
-		// Do not clear error message if items are empty due to load failure
+		return;
 	} else if (items.length === 0) {
 		galleryItemsContainer.innerHTML = '<p>No images found in the gallery.</p>';
 	} else {
@@ -547,79 +478,65 @@ function populateGallery(items) {
 // Functions to open and close gallery modal
 function openGalleryModal() {
 	if (!galleryModal) return;
-	if (galleryData.length === 0) { // If gallery data hasn't been loaded or failed
+	if (galleryData.length === 0) {
 		loadGalleryData().then(data => {
 			populateGallery(data);
 			galleryModal.style.display = 'block';
 		});
 	} else {
-		populateGallery(galleryData); // Repopulate in case it was loaded but modal closed
+		populateGallery(galleryData);
 		galleryModal.style.display = 'block';
 	}
 }
 
 function closeGalleryModal() {
-	if (galleryModal) {
-		galleryModal.style.display = 'none';
-	}
+	if (galleryModal) galleryModal.style.display = 'none';
 }
 
 // Initialize the app when DOM content is loaded
 document.addEventListener('DOMContentLoaded', () => {
 	initialPanoramaUrl = getPanoramaFromUrl();
-	// Initialize Photo Sphere Viewer by default
 	initPanoramaViewer();
 
-	// Setup event listeners for VR buttons
 	if (enterVrBtn) enterVrBtn.addEventListener('click', switchToVRMode);
 	if (exitVrBtn) exitVrBtn.addEventListener('click', exitVR);
 
-	// Gallery event listeners
-	if (openGalleryBtn) {
-		openGalleryBtn.addEventListener('click', openGalleryModal);
-	}
-	if (galleryCloseButton) {
-		galleryCloseButton.addEventListener('click', closeGalleryModal);
-	}
-	// Close modal if user clicks outside of it
+	if (openGalleryBtn) openGalleryBtn.addEventListener('click', openGalleryModal);
+	if (galleryCloseButton) galleryCloseButton.addEventListener('click', closeGalleryModal);
+	
 	window.addEventListener('click', (event) => {
-		if (galleryModal && event.target === galleryModal) {
-			closeGalleryModal();
-		}
+		if (galleryModal && event.target === galleryModal) closeGalleryModal();
 	});
 
-	// Check WebXR status (e.g., if immersive-vr is supported)
 	updateXrStatus();
 
-	// Handle window resize for panorama viewer (only when in non-VR mode)
 	window.addEventListener('resize', () => {
-		if (panoramaViewer && !isVRMode) {
-			panoramaViewer.resize();
-		}
+		if (panoramaViewer && !isVRMode) panoramaViewer.resize();
 	});
 
-	// Listen for hash changes to reload viewer if panorama changes
 	window.addEventListener('hashchange', () => {
 		const newPanoramaUrl = getPanoramaFromUrl();
-		// If the panorama URL in the hash changes and it's different from the current one
 		if (newPanoramaUrl && newPanoramaUrl !== initialPanoramaUrl) {
 			console.log(`Panorama changed to: ${newPanoramaUrl}. Re-initializing panorama viewer.`);
-			// If panoramaViewer exists, destroy it before re-initializing
 			if (panoramaViewer) {
 				panoramaViewer.destroy();
 				panoramaViewer = null;
 			}
-			initPanoramaViewer(); // Re-initialize with the new panorama
-			initialPanoramaUrl = newPanoramaUrl; // Update initial URL
+			initPanoramaViewer();
+			initialPanoramaUrl = newPanoramaUrl;
 		}
 	});
 
-	// Listen for a custom event from the VR viewer to exit VR (if it's implemented to dispatch such an event)
 	const vrViewerElement = document.getElementById('viewer');
 	if (vrViewerElement) {
-		vrViewerElement.addEventListener('exitvrrequest', () => {
-			console.log("app.js: 'exitvrrequest' event received from VR viewer. Calling exitVR().");
-			exitVR();
+		vrViewerElement.addEventListener('exitvrrequest', (e) => {
+			console.log("app.js: 'exitvrrequest' event received from VR viewer");
+			try {
+				exitVR();
+			} catch (error) {
+				console.error("Error handling exitvrrequest:", error);
+				switchToPanoramaMode();
+			}
 		});
 	}
 });
