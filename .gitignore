@@ -12,3 +12,4 @@ thumb/
 *.tiff
 
 gallery.json
+!placeholder_thumbnail.png
