@@ -1,0 +1,7 @@
+services:
+  webserver:
+    build: .
+    container_name: 360-photo-sphere-vr
+    ports:
+      - "8360:80"
+    restart: unless-stopped
