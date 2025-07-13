@@ -5,6 +5,7 @@ services:
     ports:
       - "8360:80"
     restart: unless-stopped
+    volumes:
       - ./imgs:/usr/share/nginx/html/imgs:ro
       - ./thumb:/usr/share/nginx/html/thumb:ro
       - ./gallery.json:/usr/share/nginx/html/gallery.json:ro
