@@ -1,0 +1,11 @@
+.git
+.gitignore
+
+Dockerfile
+docker-compose.yml
+
+*.md
+old/
+
+thumbs.py
+listgenerator.py
