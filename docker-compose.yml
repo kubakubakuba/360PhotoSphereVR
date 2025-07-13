@@ -3,10 +3,12 @@ services:
     build: .
     container_name: 360-photo-sphere-vr
     ports:
-      - "8360:80"
+      - "8360:443"
+      - "8361:80"
     restart: unless-stopped
     volumes:
       - ./imgs:/usr/share/nginx/html/imgs:ro
       - ./thumb:/usr/share/nginx/html/thumb:ro
       - ./gallery.json:/usr/share/nginx/html/gallery.json:ro
       - ./DEFAULT.JPG:/usr/share/nginx/html/DEFAULT.JPG:ro
+      - ./placeholder_thumbnail.png:/usr/share/nginx/html/placeholder_thumbnail.png:ro
