@@ -1,542 +1,501 @@
 import { Viewer as PhotoSphereViewer } from '@photo-sphere-viewer/core';
+import { LocalLibrary } from './local-library.js';
 
-// Global variables
+const DEFAULT_CONFIG = {
+	title: '360° Photo Sphere',
+	defaultPanorama: '',
+	galleryUrl: 'gallery.json',
+	vrPassthrough: true,
+	vrUseLayers: true,
+	vrFoveation: 0,
+	vrFramebufferScale: 0,
+	vrMaxTextureSize: 0,
+};
+const config = { ...DEFAULT_CONFIG, ...(window.APP_CONFIG || {}) };
+const FALLBACK_PANORAMA = 'DEFAULT.JPG';
+const PLACEHOLDER_THUMBNAIL = 'placeholder_thumbnail.png';
+const EXIT_TIMEOUT_MS = 2000;
+
 let panoramaViewer = null;
 let vrViewer = null;
-let isVRMode = false;
 let vrSession = null;
-let currentXrReferenceSpace = null;
+let viewerModule = null;
+let exitFallbackTimer = null;
+let galleryItems = [];
+let currentPanorama = null;
+let toastTimer = null;
+const xrSupport = { vr: false, ar: false };
+const library = new LocalLibrary();
 
-const preferredReferenceSpaces = ['local-floor', 'local', 'viewer'];
-const DEFAULT_PANORAMA = 'DEFAULT.JPG';
+const $ = (id) => document.getElementById(id);
+const els = {
+	title: $('app-title'),
+	panorama: $('panorama-viewer'),
+	vr: $('viewer'),
+	enterVr: $('enter-vr'),
+	openGallery: $('open-gallery-btn'),
+	status: $('vr-status'),
+	statusText: $('vr-status-text'),
+	loading: $('vr-loading'),
+	loadingText: $('loading-text'),
+	progress: $('progress-bar'),
+	modal: $('gallery-modal'),
+	modalClose: $('gallery-close'),
+	grid: $('gallery-grid'),
+	localGrid: $('local-grid'),
+	fileInput: $('file-input'),
+	dropOverlay: $('drop-overlay'),
+	toast: $('toast'),
+	photoTitle: $('photo-title'),
+	prevPhoto: $('prev-photo'),
+	nextPhoto: $('next-photo'),
+};
 
-// Function to get panorama from URL hash
-function getPanoramaFromUrl() {
-	const hash = window.location.hash.substring(1);
-	const params = new URLSearchParams(hash);
-	return params.get('panorama');
+const ICONS = {
+	add: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+	remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+
+// --- Helpers ------------------------------------------------------------
+
+function panoramaFromHash() {
+	return new URLSearchParams(window.location.hash.slice(1)).get('panorama');
 }
 
-// Initialize Photo Sphere Viewer for non-VR display
-function initPanoramaViewer() {
+function setStatus(state, text) {
+	els.status.dataset.state = state;
+	els.statusText.textContent = text;
+	els.status.title = text;
+}
+
+function showLoading(text, percent) {
+	els.loadingText.textContent = text;
+	els.progress.style.width = `${percent}%`;
+	els.loading.hidden = false;
+}
+
+function hideLoading() {
+	els.loading.hidden = true;
+}
+
+function showToast(text, kind = 'info', duration = 3500) {
+	clearTimeout(toastTimer);
+	els.toast.textContent = text;
+	els.toast.dataset.kind = kind;
+	els.toast.hidden = false;
+	toastTimer = setTimeout(() => { els.toast.hidden = true; }, duration);
+}
+
+// local:<id> paths point into the on-device library; everything else is a URL.
+function resolveUrl(path) {
+	return library.resolve(path) ?? path;
+}
+
+function allItems() {
+	return [...library.items, ...galleryItems];
+}
+
+function isAvailable(path) {
+	return !!path && (!LocalLibrary.isLocal(path) || library.has(path));
+}
+
+async function loadGallery() {
 	try {
-		const panoramaUrl = getPanoramaFromUrl() || DEFAULT_PANORAMA;
-		panoramaViewer = new PhotoSphereViewer({
-			container: 'panorama-viewer',
-			panorama: panoramaUrl,
-			navbar: [
-				'zoom',
-				'move',
-				'fullscreen',
-			],
-			defaultZoomLvl: 0,
-			minFov: 30,
-			maxFov: 90,
-			mousewheel: true,
-			mousemove: true,
-			keyboard: 'fullscreen',
-			moveSpeed: 1.0,
-			zoomSpeed: 1.0,
-		});
-
-		console.log('Photo Sphere Viewer initialized successfully');
-
-		panoramaViewer.addEventListener('ready', () => {
-			console.log('Panorama viewer is ready');
-			updateStatus('renderer-status', 'Photo Sphere Viewer ready', 'ok');
-		});
-
-		panoramaViewer.addEventListener('error', (err) => {
-			console.error('Panorama viewer error:', err);
-			updateStatus('renderer-status', `Error: ${err.message}`, 'error');
-		});
-
+		const response = await fetch(config.galleryUrl, { cache: 'no-cache' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const data = await response.json();
+		return Array.isArray(data) ? data.filter((item) => item && item.path) : [];
 	} catch (error) {
-		console.error('Failed to initialize Photo Sphere Viewer:', error);
-		updateStatus('renderer-status', `Init Error: ${error.message}`, 'error');
-	}
-}
-
-// Initialize VR Viewer (only when entering VR)
-async function initVRViewer() {
-	try {
-		console.log('Importing VR Viewer module...');
-
-		let ViewerClass;
-		try {
-			const module = await import('./viewer.js');
-			ViewerClass = module.Viewer || module.default;
-		} catch (importError) {
-			console.error('Failed to import viewer.js:', importError);
-			throw new Error('Could not load VR viewer module. Ensure viewer.js exists and is accessible.');
-		}
-
-		if (!ViewerClass) {
-			throw new Error('Viewer class not found in imported module. Check viewer.js export.');
-		}
-
-		const panoramaUrl = getPanoramaFromUrl() || DEFAULT_PANORAMA;
-		console.log('Creating VR Viewer instance...');
-		vrViewer = new ViewerClass({
-			containerId: 'viewer',
-			panorama: panoramaUrl,
-			caption: '360° VR Panorama Viewer'
-		});
-
-		console.log('VR Viewer initialized successfully');
-		return vrViewer;
-	} catch (error) {
-		console.error('Failed to initialize VR Viewer:', error);
-		throw error;
-	}
-}
-
-// Switch to VR mode
-async function switchToVRMode() {
-	if (isVRMode) return;
-
-	try {
-		updateStatus('session-status', 'Switching to VR mode...', 'warning');
-
-		if (panoramaViewer) {
-			console.log('Destroying Photo Sphere Viewer before entering VR');
-			panoramaViewer.destroy();
-			panoramaViewer = null;
-		}
-
-		document.getElementById('panorama-viewer').style.display = 'none';
-		document.getElementById('viewer').style.display = 'block';
-
-		if (!vrViewer) {
-			await initVRViewer();
-			await new Promise(resolve => setTimeout(resolve, 500));
-		}
-
-		isVRMode = true;
-		console.log('Switched to VR mode flag set');
-		await enterVR();
-
-	} catch (error) {
-		console.error('Error switching to VR mode:', error);
-		updateStatus('session-status', `VR Switch Error: ${error.message}`, 'error');
-		switchToPanoramaMode();
-	}
-}
-
-// Switch back to Panorama mode
-function switchToPanoramaMode() {
-	console.log('Switching to Panorama mode');
-
-	document.getElementById('viewer').style.display = 'none';
-
-	if (vrViewer) {
-		console.log("Destroying VR viewer instance");
-		vrViewer.destroy();
-		vrViewer = null;
-	}
-
-	const viewerContainer = document.getElementById('viewer');
-	while (viewerContainer.firstChild) {
-		viewerContainer.removeChild(viewerContainer.firstChild);
-	}
-
-	if (!panoramaViewer) {
-		console.log('Initializing Photo Sphere Viewer for non-VR display');
-		initPanoramaViewer();
-	}
-
-	const panoramaContainer = document.getElementById('panorama-viewer');
-	panoramaContainer.style.display = 'block';
-
-	if (panoramaViewer) {
-		setTimeout(() => {
-			console.log('Resizing Photo Sphere Viewer');
-			panoramaViewer.resize();
-		}, 100);
-	}
-
-	isVRMode = false;
-	updateStatus('session-status', 'Returned to panorama view', 'ok');
-}
-
-// VR Functions
-async function enterVR() {
-	console.log('Attempting to enter VR...');
-	if (!vrViewer || !vrViewer.renderer || !vrViewer.renderer.xr) {
-		updateStatus('session-status', 'Error: VR Renderer not ready for session.', 'error');
-		console.error("VR Viewer, Renderer, or XR module not initialized for session.");
-		return;
-	}
-
-	updateStatus('session-status', 'Attempting to start VR session...', 'warning');
-	showVrLoading('Initializing VR Experience...');
-	updateProgress(10, 'Checking VR capabilities...');
-
-	try {
-		if (!navigator.xr) {
-			throw new Error('WebXR API not available in this browser.');
-		}
-
-		updateProgress(20, 'Verifying session support...');
-		const immersiveSupported = await navigator.xr.isSessionSupported('immersive-vr');
-		if (!immersiveSupported) {
-			throw new Error('Immersive VR session not supported on this device.');
-		}
-		console.log('Immersive VR supported.');
-
-		updateProgress(30, 'Requesting VR session...');
-		const session = await navigator.xr.requestSession('immersive-vr');
-		vrSession = session;
-		console.log('XR session obtained:', session);
-
-		session.addEventListener('end', onXRSessionEnded);
-		console.log('Attached "end" event listener to XR session.');
-
-		vrViewer.renderer.xr.enabled = true;
-		console.log('Three.js XR manager enabled.');
-
-		updateProgress(40, 'Finding supported reference space...');
-		let selectedSpaceType = null;
-		currentXrReferenceSpace = null;
-
-		for (const type of preferredReferenceSpaces) {
-			try {
-				console.log(`Attempting to request native reference space: ${type}`);
-				const refSpace = await session.requestReferenceSpace(type);
-				if (refSpace) {
-					currentXrReferenceSpace = refSpace;
-					selectedSpaceType = type;
-					console.log(`Successfully obtained native reference space: ${type}`);
-					break;
-				}
-			} catch (e) {
-				console.warn(`Native reference space type ${type} not supported: ${e.message}`);
-			}
-		}
-
-		if (!selectedSpaceType) {
-			throw new Error('Could not obtain any supported XR reference space natively.');
-		}
-		vrViewer.setReferenceSpaceInfo(selectedSpaceType);
-		updateProgress(50, `Using reference space: ${selectedSpaceType}`);
-
-		vrViewer.renderer.xr.setReferenceSpaceType(selectedSpaceType);
-		console.log(`Three.js WebXRManager referenceSpaceType set to: ${selectedSpaceType}`);
-
-		updateProgress(60, 'Initializing Three.js XR session...');
-		await vrViewer.renderer.xr.setSession(session);
-		console.log('Three.js XR session has been set.');
-
-		window.addEventListener('keydown', vrViewer.onKeyDown.bind(vrViewer));
-		window.addEventListener('keyup', vrViewer.onKeyUp.bind(vrViewer));
-
-		updateProgress(80, 'Starting VR rendering loop...');
-		vrViewer.renderer.setAnimationLoop((timestamp, frame) => {
-			if (!frame) return;
-			
-			if (vrViewer.isRotatingLeft) {
-				vrViewer.sphere.rotation.y += vrViewer.vrRotationSpeed;
-			}
-			if (vrViewer.isRotatingRight) {
-				vrViewer.sphere.rotation.y -= vrViewer.vrRotationSpeed;
-			}
-
-			const rotation = vrViewer.camera.rotation;
-			vrViewer.updateCameraOrientation(rotation.x, rotation.y, rotation.z);
-			vrViewer.render();
-		});
-		console.log('VR animation loop started with Three.js XR manager.');
-
-		enterVrBtn.disabled = true;
-		exitVrBtn.disabled = false;
-		updateStatus('session-status', 'VR session active', 'ok');
-		updateProgress(100, 'VR Ready!');
-
-		setTimeout(() => {
-			hideVrLoading();
-		}, 1000);
-
-	} catch (error) {
-		console.error('Error entering VR:', error);
-		updateStatus('session-status', `VR Error: ${error.message}`, 'error');
-		document.getElementById('loading-text').textContent = `VR Initialization Failed: ${error.message}`;
-		updateProgress(0, '');
-
-		setTimeout(() => {
-			hideVrLoading();
-			switchToPanoramaMode();
-		}, 4000);
-
-		if (vrSession && !vrSession.ended) {
-			try {
-				console.log('Attempting to end session during error handling');
-				await vrSession.end();
-			} catch (endError) {
-				console.warn('Error ending session during error handling:', endError);
-			}
-		}
-		onXRSessionEnded();
-	}
-}
-
-// Function called when the XR session ends
-function onXRSessionEnded() {
-	console.log('onXRSessionEnded called');
-	
-	if (vrViewer && vrViewer.renderer && vrViewer.renderer.xr) {
-		console.log('Stopping Three.js animation loop');
-		vrViewer.renderer.setAnimationLoop(null);
-		vrViewer.renderer.xr.enabled = false;
-	}
-
-	enterVrBtn.disabled = false;
-	exitVrBtn.disabled = true;
-	updateStatus('session-status', 'No active VR session');
-	setReferenceSpaceInfo('Not set');
-
-	if (vrViewer) {
-		console.log('Removing keyboard listeners');
-		window.removeEventListener('keydown', vrViewer.onKeyDown);
-		window.removeEventListener('keyup', vrViewer.onKeyUp);
-		vrViewer.isRotatingLeft = false;
-		vrViewer.isRotatingRight = false;
-	}
-
-	hideVrLoading();
-
-	vrSession = null;
-	currentXrReferenceSpace = null;
-	
-	console.log('Calling switchToPanoramaMode from onXRSessionEnded');
-	switchToPanoramaMode();
-}
-
-// Function to explicitly exit VR
-async function exitVR() {
-	console.log('exitVR called');
-	showVrLoading('Exiting VR...');
-	
-	enterVrBtn.disabled = true;
-	exitVrBtn.disabled = true;
-
-	if (vrSession && !vrSession.ended) {
-		try {
-			console.log('Ending VR session');
-			await vrSession.end();
-			console.log('VR session ended successfully');
-		} catch (e) {
-			console.error('Error ending VR session:', e);
-		}
-	} else {
-		console.log('No active VR session to end');
-	}
-
-	console.log('Calling onXRSessionEnded from exitVR');
-	onXRSessionEnded();
-}
-
-// Helper functions for UI status updates
-function updateStatus(elementId, message, type = '') {
-	const element = document.getElementById(elementId);
-	const indicator = document.getElementById(elementId + '-indicator');
-	if (element) element.textContent = message;
-	if (indicator) indicator.className = `status-indicator status-${type}`;
-}
-
-function setReferenceSpaceInfo(info) {
-	const element = document.getElementById('reference-space');
-	if (element) element.textContent = `Reference Space: ${info}`;
-}
-
-function updateProgress(percent, text) {
-	const progressBar = document.getElementById('progress-bar');
-	const loadingText = document.getElementById('loading-text');
-	if (progressBar) progressBar.style.width = percent + '%';
-	if (loadingText && text) loadingText.textContent = text;
-}
-
-function showVrLoading(text) {
-	const loading = document.getElementById('vr-loading');
-	const loadingText = document.getElementById('loading-text');
-	if (loadingText && text) loadingText.textContent = text;
-	if (loading) loading.classList.add('visible');
-}
-
-function hideVrLoading() {
-	const loading = document.getElementById('vr-loading');
-	if (loading) loading.classList.remove('visible');
-}
-
-function updateXrStatus() {
-	const statusElem = document.getElementById('xr-status');
-	const indicator = document.getElementById('xr-status-indicator');
-	if (!navigator.xr) {
-		statusElem.textContent = 'WebXR API not available in this browser.';
-		indicator.className = 'status-indicator status-error';
-		enterVrBtn.disabled = true;
-		return;
-	}
-	indicator.className = 'status-indicator status-warning';
-	statusElem.textContent = 'Checking WebXR immersive-vr support...';
-	setTimeout(() => {
-		navigator.xr.isSessionSupported('immersive-vr')
-			.then((supported) => {
-				if (supported) {
-					statusElem.textContent = 'WebXR supported - Ready for VR';
-					indicator.className = 'status-indicator status-ok';
-					enterVrBtn.disabled = false;
-				} else {
-					statusElem.textContent = 'WebXR immersive-vr not supported on this device.';
-					indicator.className = 'status-indicator status-error';
-					enterVrBtn.disabled = true;
-				}
-			})
-			.catch((error) => {
-				console.error('WebXR support check failed:', error);
-				statusElem.textContent = `WebXR check failed: ${error.message}`;
-				indicator.className = 'status-indicator status-error';
-				enterVrBtn.disabled = true;
-			});
-	}, 500);
-}
-
-// DOM elements and event listeners
-const enterVrBtn = document.getElementById('enter-vr');
-const exitVrBtn = document.getElementById('exit-vr');
-let initialPanoramaUrl = '';
-
-// Gallery elements
-const openGalleryBtn = document.getElementById('open-gallery-btn');
-const galleryModal = document.getElementById('gallery-modal');
-const galleryCloseButton = document.getElementById('gallery-close-button');
-const galleryItemsContainer = document.getElementById('gallery-items-container');
-let galleryData = [];
-
-// Function to load gallery data
-async function loadGalleryData() {
-	try {
-		const response = await fetch('gallery.json');
-		if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-		galleryData = await response.json();
-		return galleryData;
-	} catch (error) {
-		console.error("Could not load gallery data:", error);
-		if (galleryItemsContainer) {
-			galleryItemsContainer.innerHTML = '<p style="color: #ff416c;">Error loading gallery. Please check console.</p>';
-		}
+		console.error('Could not load gallery:', error);
 		return [];
 	}
 }
 
-// Function to create a single gallery item element
-function createGalleryItemElement(item) {
-	const itemDiv = document.createElement('div');
-	itemDiv.classList.add('gallery-item');
-	itemDiv.dataset.path = item.path;
+function resolveDefaultPanorama() {
+	return config.defaultPanorama
+		|| galleryItems.find((item) => item.default)?.path
+		|| galleryItems[0]?.path
+		|| FALLBACK_PANORAMA;
+}
+
+// --- Desktop panorama viewer --------------------------------------------
+
+function initPanoramaViewer(path) {
+	const compact = window.innerWidth < 600;
+	panoramaViewer = new PhotoSphereViewer({
+		container: els.panorama,
+		panorama: resolveUrl(path),
+		navbar: compact ? ['zoom', 'fullscreen'] : ['zoom', 'move', 'fullscreen'],
+		defaultZoomLvl: 0,
+		minFov: 30,
+		maxFov: 90,
+		mousewheel: true,
+		keyboard: 'fullscreen',
+		loadingTxt: '',
+	});
+	panoramaViewer.addEventListener('panorama-error', (event) => {
+		console.error('Panorama failed to load:', event.error);
+		setStatus('error', 'Could not load panorama');
+	});
+}
+
+function showPanorama(path) {
+	if (!path || path === currentPanorama) return;
+	if (!isAvailable(path)) {
+		showToast('That photo is no longer stored on this device.', 'error');
+		history.replaceState(null, '', `#panorama=${encodeURIComponent(currentPanorama)}`);
+		return;
+	}
+	currentPanorama = path;
+	refreshCurrentPhoto();
+	if (panoramaViewer) {
+		panoramaViewer.setPanorama(resolveUrl(path), { transition: 800, showLoader: true }).catch((error) => {
+			console.error('setPanorama failed:', error);
+		});
+	}
+}
+
+// --- Gallery modal ------------------------------------------------------
+
+function createGalleryCard(item) {
+	const card = document.createElement('div');
+	card.className = 'gallery-card';
+	card.dataset.path = item.path;
+
+	const open = document.createElement('button');
+	open.type = 'button';
+	open.className = 'card-open';
 
 	const img = document.createElement('img');
-	img.src = item.thumbnail || 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail';
-	img.alt = item.name;
-	img.onerror = () => {
-		img.src = 'https://placehold.co/150x100/CCCCCC/000000?text=No+Thumbnail';
-		img.style.objectFit = 'contain';
-	};
+	img.loading = 'lazy';
+	img.decoding = 'async';
+	img.alt = '';
+	img.src = item.thumbnail || PLACEHOLDER_THUMBNAIL;
+	img.addEventListener('error', () => {
+		if (!img.src.endsWith(PLACEHOLDER_THUMBNAIL)) img.src = PLACEHOLDER_THUMBNAIL;
+	}, { once: true });
 
-	const nameH3 = document.createElement('h3');
-	nameH3.textContent = item.name;
-
-	const descP = document.createElement('p');
-	descP.textContent = item.description;
-
-	itemDiv.appendChild(img);
-	itemDiv.appendChild(nameH3);
-	itemDiv.appendChild(descP);
-
-	itemDiv.addEventListener('click', () => {
-		window.location.hash = `panorama=${item.path}`;
-		closeGalleryModal();
-	});
-
-	return itemDiv;
-}
-
-// Function to populate gallery
-function populateGallery(items) {
-	if (!galleryItemsContainer) return;
-	galleryItemsContainer.innerHTML = '';
-	if (items.length === 0 && galleryItemsContainer.textContent.includes('Error loading gallery')) {
-		return;
-	} else if (items.length === 0) {
-		galleryItemsContainer.innerHTML = '<p>No images found in the gallery.</p>';
-	} else {
-		items.forEach(item => {
-			galleryItemsContainer.appendChild(createGalleryItemElement(item));
-		});
+	const meta = document.createElement('div');
+	meta.className = 'meta';
+	const title = document.createElement('h3');
+	title.textContent = item.name || item.path.split('/').pop();
+	meta.append(title);
+	if (item.description) {
+		const description = document.createElement('p');
+		description.textContent = item.description;
+		meta.append(description);
 	}
+
+	open.append(img, meta);
+	open.addEventListener('click', () => {
+		window.location.hash = `panorama=${encodeURIComponent(item.path)}`;
+		els.modal.close();
+	});
+	card.append(open);
+
+	if (item.local) {
+		const remove = document.createElement('button');
+		remove.type = 'button';
+		remove.className = 'card-remove';
+		remove.title = 'Remove from this device';
+		remove.setAttribute('aria-label', `Remove ${title.textContent} from this device`);
+		remove.innerHTML = ICONS.remove;
+		remove.addEventListener('click', () => removeLocalPhoto(item.path));
+		card.append(remove);
+	}
+	return card;
 }
 
-// Functions to open and close gallery modal
+function createAddCard() {
+	const card = document.createElement('button');
+	card.type = 'button';
+	card.className = 'add-card';
+	card.innerHTML = `${ICONS.add}<strong>Add photos</strong><span>Drop files here or click to browse. They stay in this browser.</span>`;
+	card.addEventListener('click', () => els.fileInput.click());
+	return card;
+}
+
+function renderGallery() {
+	els.localGrid.replaceChildren(createAddCard(), ...library.items.map(createGalleryCard));
+
+	if (galleryItems.length === 0) {
+		const empty = document.createElement('p');
+		empty.className = 'gallery-empty';
+		empty.textContent = 'No panoramas found. Check gallery.json.';
+		els.grid.replaceChildren(empty);
+	} else {
+		els.grid.replaceChildren(...galleryItems.map(createGalleryCard));
+	}
+	refreshCurrentPhoto();
+}
+
+function photoName(path) {
+	const item = allItems().find((entry) => entry.path === path);
+	if (item?.name) return item.name;
+	return path && !LocalLibrary.isLocal(path) ? decodeURIComponent(path.split('/').pop()) : '';
+}
+
+// Updates everything that depends on the current photo: gallery marking, title, arrows.
+function refreshCurrentPhoto() {
+	for (const card of els.modal.querySelectorAll('.gallery-card')) {
+		card.toggleAttribute('aria-current', card.dataset.path === currentPanorama);
+	}
+	const name = photoName(currentPanorama);
+	els.photoTitle.textContent = name;
+	els.photoTitle.hidden = !name;
+	document.title = name ? `${name} – ${config.title}` : config.title;
+	const navigable = allItems().length > 1;
+	els.prevPhoto.hidden = !navigable;
+	els.nextPhoto.hidden = !navigable;
+}
+
+// Same order as the VR thumbstick: local photos first, then the gallery; wraps around.
+function stepPhoto(direction) {
+	const items = allItems();
+	if (items.length < 2) return;
+	const index = items.findIndex((item) => item.path === currentPanorama);
+	const next = index < 0
+		? items[direction > 0 ? 0 : items.length - 1]
+		: items[(index + direction + items.length) % items.length];
+	window.location.hash = `panorama=${encodeURIComponent(next.path)}`;
+}
+
+function onArrowKey(event) {
+	if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+	if (vrSession || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+	// In fullscreen the arrow keys rotate the view (Photo Sphere Viewer keyboard control).
+	if (els.modal.open || document.fullscreenElement) return;
+	if (event.target.closest?.('input, textarea, select, [contenteditable]')) return;
+	event.preventDefault();
+	stepPhoto(event.key === 'ArrowRight' ? 1 : -1);
+}
+
 function openGalleryModal() {
-	if (!galleryModal) return;
-	if (galleryData.length === 0) {
-		loadGalleryData().then(data => {
-			populateGallery(data);
-			galleryModal.style.display = 'block';
-		});
+	els.modal.showModal();
+	els.modal.querySelector('.gallery-card[aria-current]')?.scrollIntoView({ block: 'nearest' });
+}
+
+// --- Local photos -------------------------------------------------------
+
+async function addLocalPhotos(files) {
+	const images = [...files];
+	if (images.length === 0) return;
+	showToast(images.length === 1 ? `Adding ${images[0].name}…` : `Adding ${images.length} photos…`, 'info', 60000);
+
+	const { added, existing, failed } = await library.add(images);
+	renderGallery();
+
+	const first = added[0] || existing[0];
+	if (first) {
+		window.location.hash = `panorama=${encodeURIComponent(first)}`;
+		if (els.modal.open) els.modal.close();
+	}
+	if (failed.length > 0) {
+		const names = failed.map((f) => `${f.name} (${f.reason})`).join(', ');
+		showToast(`Could not add ${names}`, 'error', 6000);
+	} else if (added.length > 0) {
+		const where = library.persistent ? 'saved on this device' : 'available until you close this tab';
+		showToast(`${added.length === 1 ? 'Photo' : `${added.length} photos`} ${where}.`);
+	} else if (existing.length > 0) {
+		showToast(existing.length === 1 ? 'That photo is already on this device.' : 'Those photos are already on this device.');
 	} else {
-		populateGallery(galleryData);
-		galleryModal.style.display = 'block';
+		els.toast.hidden = true;
 	}
 }
 
-function closeGalleryModal() {
-	if (galleryModal) galleryModal.style.display = 'none';
+async function removeLocalPhoto(path) {
+	try {
+		await library.remove(path);
+	} catch (error) {
+		console.error('Could not remove local photo:', error);
+		showToast('Could not remove the photo.', 'error');
+		return;
+	}
+	if (path === currentPanorama) {
+		const fallback = library.items[0]?.path || resolveDefaultPanorama();
+		window.location.hash = `panorama=${encodeURIComponent(fallback)}`;
+	}
+	renderGallery();
 }
 
-// Initialize the app when DOM content is loaded
-document.addEventListener('DOMContentLoaded', () => {
-	initialPanoramaUrl = getPanoramaFromUrl();
-	initPanoramaViewer();
+function setupDragAndDrop() {
+	const hasFiles = (event) => event.dataTransfer && [...event.dataTransfer.types].includes('Files');
+	let depth = 0;
 
-	if (enterVrBtn) enterVrBtn.addEventListener('click', switchToVRMode);
-	if (exitVrBtn) exitVrBtn.addEventListener('click', exitVR);
-
-	if (openGalleryBtn) openGalleryBtn.addEventListener('click', openGalleryModal);
-	if (galleryCloseButton) galleryCloseButton.addEventListener('click', closeGalleryModal);
-	
-	window.addEventListener('click', (event) => {
-		if (galleryModal && event.target === galleryModal) closeGalleryModal();
+	window.addEventListener('dragenter', (event) => {
+		if (!hasFiles(event) || vrSession) return;
+		depth++;
+		els.dropOverlay.hidden = false;
+	});
+	window.addEventListener('dragleave', (event) => {
+		if (!hasFiles(event)) return;
+		depth = Math.max(0, depth - 1);
+		if (depth === 0) els.dropOverlay.hidden = true;
+	});
+	window.addEventListener('dragover', (event) => {
+		if (!hasFiles(event)) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'copy';
+	});
+	window.addEventListener('drop', (event) => {
+		if (!hasFiles(event)) return;
+		event.preventDefault();
+		depth = 0;
+		els.dropOverlay.hidden = true;
+		if (!vrSession) addLocalPhotos(event.dataTransfer.files);
 	});
 
-	updateXrStatus();
-
-	window.addEventListener('resize', () => {
-		if (panoramaViewer && !isVRMode) panoramaViewer.resize();
+	els.fileInput.addEventListener('change', () => {
+		addLocalPhotos(els.fileInput.files);
+		els.fileInput.value = '';
 	});
+}
 
-	window.addEventListener('hashchange', () => {
-		const newPanoramaUrl = getPanoramaFromUrl();
-		if (newPanoramaUrl && newPanoramaUrl !== initialPanoramaUrl) {
-			console.log(`Panorama changed to: ${newPanoramaUrl}. Re-initializing panorama viewer.`);
-			if (panoramaViewer) {
-				panoramaViewer.destroy();
-				panoramaViewer = null;
-			}
-			initPanoramaViewer();
-			initialPanoramaUrl = newPanoramaUrl;
+// --- WebXR --------------------------------------------------------------
+
+async function detectXrSupport() {
+	if (!navigator.xr) {
+		setStatus('idle', window.isSecureContext ? 'WebXR not available' : 'VR requires HTTPS');
+		return;
+	}
+	const check = (mode) => navigator.xr.isSessionSupported(mode).catch(() => false);
+	[xrSupport.vr, xrSupport.ar] = await Promise.all([check('immersive-vr'), check('immersive-ar')]);
+
+	if (xrSupport.vr || xrSupport.ar) {
+		els.enterVr.disabled = false;
+		setStatus('ok', 'VR ready');
+		viewerModule ??= import('./viewer.js'); // warm up so entering VR is instant
+	} else {
+		setStatus('idle', 'No VR headset detected');
+	}
+}
+
+async function enterVR() {
+	if (vrSession || !navigator.xr) return;
+	els.enterVr.disabled = true;
+
+	const mode = config.vrPassthrough && xrSupport.ar ? 'immersive-ar' : 'immersive-vr';
+	let session;
+	try {
+		// Request the session first, while the click still counts as a user gesture.
+		session = await navigator.xr.requestSession(mode, { optionalFeatures: ['local-floor', 'layers', 'hand-tracking'] });
+	} catch (error) {
+		console.error('Could not start XR session:', error);
+		setStatus('error', `Could not start VR: ${error.message}`);
+		els.enterVr.disabled = false;
+		return;
+	}
+
+	vrSession = session;
+	session.addEventListener('end', teardownVR);
+	setStatus('warn', 'Starting VR…');
+	showLoading('Starting VR…', 30);
+
+	try {
+		const { Viewer } = await (viewerModule ??= import('./viewer.js'));
+		if (session !== vrSession) return;
+
+		// Free the desktop viewer's GPU memory while in VR.
+		panoramaViewer?.destroy();
+		panoramaViewer = null;
+		els.panorama.hidden = true;
+		els.vr.hidden = false;
+
+		vrViewer = new Viewer({ containerId: 'viewer', panorama: currentPanorama, items: allItems(), resolveUrl, config });
+		document.body.classList.add('in-vr');
+		showLoading('Starting VR…', 70);
+		await vrViewer.startSession(session, { mode });
+		setStatus('ok', 'In VR');
+		hideLoading();
+	} catch (error) {
+		console.error('Error starting VR:', error);
+		setStatus('error', `VR error: ${error.message}`);
+		exitVR();
+	}
+}
+
+function exitVR() {
+	const session = vrSession;
+	if (!session) {
+		teardownVR();
+		return;
+	}
+	clearTimeout(exitFallbackTimer);
+	exitFallbackTimer = setTimeout(() => {
+		console.warn('XR session did not report "end", forcing teardown');
+		teardownVR();
+	}, EXIT_TIMEOUT_MS);
+	session.end().catch((error) => {
+		console.warn('session.end() failed:', error);
+		teardownVR();
+	});
+}
+
+// Single teardown path, driven by the session's "end" event (or the fallback timer).
+function teardownVR() {
+	if (!vrSession && !vrViewer) return;
+	clearTimeout(exitFallbackTimer);
+	const viewer = vrViewer;
+	vrViewer = null;
+	vrSession = null;
+
+	// three.js listens to the same "end" event; let it restore its state before disposing.
+	setTimeout(() => {
+		try {
+			viewer?.destroy();
+		} catch (error) {
+			console.error('Error destroying VR viewer:', error);
 		}
+		els.vr.replaceChildren();
+		els.vr.hidden = true;
+		document.body.classList.remove('in-vr');
+		els.panorama.hidden = false;
+		if (!panoramaViewer) initPanoramaViewer(currentPanorama);
+		hideLoading();
+		els.enterVr.disabled = !(xrSupport.vr || xrSupport.ar);
+		if (els.status.dataset.state !== 'error') setStatus('ok', 'VR ready');
+	}, 0);
+}
+
+// --- Startup ------------------------------------------------------------
+
+async function init() {
+	document.title = config.title;
+	els.title.textContent = config.title;
+
+	els.enterVr.addEventListener('click', enterVR);
+	els.openGallery.addEventListener('click', openGalleryModal);
+	els.prevPhoto.addEventListener('click', () => stepPhoto(-1));
+	els.nextPhoto.addEventListener('click', () => stepPhoto(1));
+	window.addEventListener('keydown', onArrowKey);
+	els.modalClose.addEventListener('click', () => els.modal.close());
+	els.modal.addEventListener('click', (event) => {
+		if (event.target === els.modal) els.modal.close();
 	});
 
-	const vrViewerElement = document.getElementById('viewer');
-	if (vrViewerElement) {
-		vrViewerElement.addEventListener('exitvrrequest', (e) => {
-			console.log("app.js: 'exitvrrequest' event received from VR viewer");
-			try {
-				exitVR();
-			} catch (error) {
-				console.error("Error handling exitvrrequest:", error);
-				switchToPanoramaMode();
-			}
-		});
+	els.vr.addEventListener('exitvrrequest', exitVR);
+	els.vr.addEventListener('panoramachange', (event) => {
+		currentPanorama = event.detail.path;
+		history.replaceState(null, '', `#panorama=${encodeURIComponent(currentPanorama)}`);
+		refreshCurrentPhoto();
+	});
+
+	window.addEventListener('hashchange', () => showPanorama(panoramaFromHash()));
+	window.addEventListener('resize', () => panoramaViewer?.autoSize());
+
+	detectXrSupport();
+
+	setupDragAndDrop();
+
+	[galleryItems] = await Promise.all([loadGallery(), library.open()]);
+	const requested = panoramaFromHash();
+	currentPanorama = isAvailable(requested) ? requested : resolveDefaultPanorama();
+	if (requested && requested !== currentPanorama) {
+		history.replaceState(null, '', `#panorama=${encodeURIComponent(currentPanorama)}`);
+		showToast('That photo is no longer stored on this device.', 'error');
 	}
-});
+	initPanoramaViewer(currentPanorama);
+	renderGallery();
+}
+
+init();

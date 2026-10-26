@@ -1,23 +1,24 @@
 [
   {
-    "id": "default_pano",
+    "id": "dji_0423",
     "name": "Default View (DJI)",
     "path": "./imgs/DJI_0423.JPG",
     "thumbnail": "./thumb/DJI_0423.thumb.JPG",
-    "description": "The default panoramic image."
+    "description": "The default panoramic image.",
+    "default": true
   },
   {
-    "id": "another_pano",
+    "id": "dji_0081",
     "name": "Sample Panorama 2",
     "path": "./imgs/DJI_0081.JPG",
     "thumbnail": "./thumb/DJI_0081.thumb.JPG",
     "description": "A description for your second panorama."
   },
   {
-    "id": "another_pano",
+    "id": "dji_0091",
     "name": "Panorama without Thumbnail",
     "path": "./imgs/DJI_0091.JPG",
-    "thumbnail": "./thumb/DJI_0091.thumb.JPG",
-    "description": "This panorama doesn't have a specific thumbnail."
+    "thumbnail": "",
+    "description": "Entries without a thumbnail use placeholder_thumbnail.png."
   }
 ]

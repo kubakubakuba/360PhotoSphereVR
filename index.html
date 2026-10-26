@@ -3,120 +3,79 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>360° VR Photo Sphere Viewer</title>
-	<link rel="stylesheet" href="./style.css">
-	<!-- CDN Lib: <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.css"> -->
+	<meta name="color-scheme" content="dark">
+	<title>360° Photo Sphere</title>
 	<link rel="stylesheet" href="./lib/photo-sphere-viewer/index.css">
+	<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-	<div class="header">
-		<h1>360° VR Photo Sphere Viewer</h1>
-		<p class="subtitle">Immersive Experience for Oculus Quest and WebXR Devices</p>
-		<!--<h2 id="panorama-title"></h2>-->
-	</div>
-	
-	<div class="container">
-		<div class="viewer-container">
-			<div id="panorama-viewer"></div>
-			
-			<div id="viewer" style="display: none;"></div>
-			
-			<div class="loading" id="vr-loading">
-				<div class="spinner"></div>
-				<div class="loading-text" id="loading-text">Preparing VR Experience</div>
-				<div class="progress-container">
-					<div class="progress-bar" id="progress-bar"></div>
-				</div>
-			</div>
+	<div id="panorama-viewer" class="stage"></div>
+	<div id="viewer" class="stage" hidden></div>
+
+	<header class="topbar">
+		<div class="brand">
+			<span id="app-title">360° Photo Sphere</span>
+			<span id="photo-title" class="photo-title" hidden></span>
 		</div>
-		
-		<div class="controls">
-			<div class="control-group">
-				<h2>VR Controls</h2>
-				<button id="enter-vr" class="btn btn-vr">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
-						<path d="M12 4C7.58 4 4 7.58 4 12s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
-					</svg>
-					Enter VR Mode
-				</button>
-				<button id="exit-vr" class="btn btn-exit" disabled>
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
-						<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-					</svg>
-					Exit VR Mode
-				</button>
-				<button id="open-gallery-btn" class="btn btn-gallery">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
-						<path d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4l2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z"/>
-					</svg>
-					Browse Gallery
-				</button>
-				
-				<div class="status">
-					<span class="status-indicator" id="xr-status-indicator"></span>
-					<span id="xr-status">Checking WebXR support...</span>
-				</div>
-			</div>
-			
-			<div class="control-group">
-				<h2>System Status</h2>
-				<div class="status">
-					<span class="status-indicator" id="renderer-status-indicator"></span>
-					<span id="renderer-status">Initializing renderer...</span>
-				</div>
-				<div class="status">
-					<span class="status-indicator" id="session-status-indicator"></span>
-					<span id="session-status">No active VR session</span>
-				</div>
-				<div class="status">
-					<span class="status-indicator" id="camera-status-indicator"></span>
-					<span id="camera-status">Camera Orientation: Not active</span>
-				</div>
-				
-				<div class="reference-space" id="reference-space">
-					Reference Space: Not set
-				</div>
-			</div>
-			
-			<div class="control-group">
-				<h2>Instructions</h2>
-				<div class="instructions">
-					<p>Click and drag to explore the 360° panorama.</p>
-					<p>Use mouse wheel to zoom in/out.</p>
-					<p>Click "Enter VR Mode" to start the VR experience.</p>
-					<p>Move your head to look around in VR.</p>
-					<p>Ensure your device supports WebXR for VR.</p>
-					<p>Requires HTTPS connection for VR functionality.</p>
-					<!--<p><strong>When in VR, use Left/Right arrow keys to rotate the panorama.</strong></p>-->
-					<p>You can load a custom panorama by adding <code>#panorama=IMAGE_URL</code> to the address bar.</p>
-				</div>
-			</div>
+		<div class="actions">
+			<span id="vr-status" class="status-pill" data-state="pending" role="status">
+				<span class="dot"></span>
+				<span id="vr-status-text">Checking VR…</span>
+			</span>
+			<button id="open-gallery-btn" class="btn btn-ghost" type="button">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+				<span class="label">Gallery</span>
+			</button>
+			<button id="enter-vr" class="btn btn-primary" type="button" disabled>
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h13A2.5 2.5 0 0 1 21 8.5v6a2.5 2.5 0 0 1-2.5 2.5h-3.2a2 2 0 0 1-1.7-1l-.9-1.5a.8.8 0 0 0-1.4 0l-.9 1.5a2 2 0 0 1-1.7 1H5.5A2.5 2.5 0 0 1 3 14.5z"/></svg>
+				<span class="label">Enter VR</span>
+			</button>
 		</div>
-	</div>
-	
-	<div class="footer">
-		<p>Photo Sphere Viewer VR Experience | Compatible with Oculus Quest and other WebXR devices</p>
+	</header>
+
+	<button id="prev-photo" class="nav-arrow nav-prev" type="button" aria-label="Previous photo" title="Previous photo (←)" hidden>
+		<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+	</button>
+	<button id="next-photo" class="nav-arrow nav-next" type="button" aria-label="Next photo" title="Next photo (→)" hidden>
+		<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+	</button>
+
+	<div id="vr-loading" class="loading" hidden>
+		<div class="loading-text" id="loading-text">Starting VR…</div>
+		<div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
 	</div>
 
-	<!-- Gallery Modal -->
-	<div id="gallery-modal" class="modal">
-		<div class="modal-content">
-			<span class="close-button" id="gallery-close-button">&times;</span>
-			<h2>Image Gallery</h2>
-			<div id="gallery-items-container">
-			</div>
+	<dialog id="gallery-modal" class="gallery-dialog" aria-labelledby="gallery-title">
+		<div class="dialog-header">
+			<h2 id="gallery-title">Gallery</h2>
+			<button id="gallery-close" class="icon-btn" type="button" aria-label="Close gallery">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+			</button>
+		</div>
+		<div class="dialog-body">
+			<section class="gallery-section">
+				<h3 class="section-title">On this device</h3>
+				<div id="local-grid" class="gallery-grid"></div>
+			</section>
+			<section class="gallery-section">
+				<h3 class="section-title">Gallery</h3>
+				<div id="gallery-grid" class="gallery-grid"></div>
+			</section>
+		</div>
+	</dialog>
+
+	<input id="file-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple hidden>
+
+	<div id="drop-overlay" class="drop-overlay" hidden>
+		<div class="drop-message">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+			<span>Drop 360° photos to view them</span>
 		</div>
 	</div>
 
-	<!-- <script type="importmap">
-		{
-			"imports": {
-				"three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
-				"@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.module.js"
-			}
-		}
-	</script> -->
+	<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+	<script src="config.js"></script>
 	<script type="importmap">
 		{
 			"imports": {
@@ -125,7 +84,6 @@
 			}
 		}
 	</script>
-
 	<script type="module" src="app.js"></script>
 </body>
 </html>

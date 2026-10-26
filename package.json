@@ -1,0 +1,13 @@
+{
+  "name": "360-photo-sphere-vr",
+  "private": true,
+  "type": "module",
+  "description": "360° panorama viewer with WebXR support",
+  "scripts": {
+    "test": "node tests/e2e/run.mjs",
+    "test:vr": "node tests/e2e/run.mjs vr"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

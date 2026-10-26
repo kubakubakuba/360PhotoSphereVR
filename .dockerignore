@@ -9,3 +9,10 @@ old/
 
 thumbs.py
 listgenerator.py
+imgs/
+thumb/
+certs/
+.env
+.github/
+tests/
+package.json

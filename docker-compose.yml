@@ -3,12 +3,24 @@ services:
     build: .
     container_name: 360-photo-sphere-vr
     ports:
-      - "8360:443"
-      - "8361:80"
+      - "${HTTPS_PORT:-8360}:443"
+      - "${HTTP_PORT:-8361}:80"
     restart: unless-stopped
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      SSL_SAN: ${SSL_SAN:-}
+      HTTPS_PORT: ${HTTPS_PORT:-8360}
+      APP_TITLE: ${APP_TITLE:-360° Photo Sphere}
+      DEFAULT_PANORAMA: ${DEFAULT_PANORAMA:-}
+      GALLERY_URL: ${GALLERY_URL:-gallery.json}
+      VR_PASSTHROUGH: ${VR_PASSTHROUGH:-true}
+      VR_USE_LAYERS: ${VR_USE_LAYERS:-true}
+      VR_FOVEATION: ${VR_FOVEATION:-0}
+      VR_FRAMEBUFFER_SCALE: ${VR_FRAMEBUFFER_SCALE:-0}
+      VR_MAX_TEXTURE_SIZE: ${VR_MAX_TEXTURE_SIZE:-0}
     volumes:
-      - ./imgs:/usr/share/nginx/html/imgs:ro
-      - ./thumb:/usr/share/nginx/html/thumb:ro
-      - ./gallery.json:/usr/share/nginx/html/gallery.json:ro
-      - ./DEFAULT.JPG:/usr/share/nginx/html/DEFAULT.JPG:ro
-      - ./placeholder_thumbnail.png:/usr/share/nginx/html/placeholder_thumbnail.png:ro
+      - ${IMAGES_DIR:-./imgs}:/usr/share/nginx/html/imgs:ro
+      - ${THUMBS_DIR:-./thumb}:/usr/share/nginx/html/thumb:ro
+      - ${GALLERY_FILE:-./gallery.json}:/usr/share/nginx/html/gallery.json:ro
+      # Generated certificate is kept here; drop your own cert.pem / key.pem in to use them instead
+      - ${CERTS_DIR:-./certs}:/etc/nginx/ssl

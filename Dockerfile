@@ -1,20 +1,27 @@
 FROM nginx:1.27-alpine
 
-RUN apk update && apk add openssl
+RUN apk add --no-cache openssl
 
-RUN mkdir -p /etc/nginx/ssl
-RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/nginx/ssl/localhost.key \
-    -out /etc/nginx/ssl/localhost.crt \
-    -subj "/C=US/ST=Local/L=Local/O=Local/CN=localhost"
+# Defaults, override with environment variables (see .env.example)
+ENV SERVER_NAME=localhost \
+    HTTPS_PORT=8360 \
+    SSL_SAN="" \
+    APP_TITLE="360° Photo Sphere" \
+    DEFAULT_PANORAMA="" \
+    GALLERY_URL="gallery.json" \
+    VR_PASSTHROUGH=true \
+    VR_USE_LAYERS=true \
+    VR_FOVEATION=0 \
+    VR_FRAMEBUFFER_SCALE=0 \
+    VR_MAX_TEXTURE_SIZE=0
+
+COPY docker/default.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/30-gen-cert.sh docker/40-app-config.sh /docker-entrypoint.d/
+RUN chmod +x /docker-entrypoint.d/30-gen-cert.sh /docker-entrypoint.d/40-app-config.sh
 
 WORKDIR /usr/share/nginx/html
-RUN rm /usr/share/nginx/html/index.html
+RUN rm -f index.html
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-COPY index.html .
-COPY style.css .
-COPY app.js .
-COPY viewer.js .
+COPY index.html style.css app.js viewer.js local-library.js config.js placeholder_thumbnail.png ./
+COPY vr/ ./vr/
 COPY lib/ ./lib/

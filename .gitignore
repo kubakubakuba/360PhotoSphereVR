@@ -13,3 +13,7 @@ thumb/
 
 gallery.json
 !placeholder_thumbnail.png
+certs/
+.env
+__pycache__/
+tests/.cache/
