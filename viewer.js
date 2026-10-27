@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { VRGallery } from './vr/gallery.js';
+import { VRGlobePanel } from './vr/globe-panel.js';
+import { itemCoordinates } from './vr/geo.js';
 import { LoadingRing } from './vr/loading-ring.js';
 import { Animator, PhotoSphere, DIM_OPACITY, R_ORB, easeOutCubic } from './vr/transitions.js';
 import { TextLabel } from './vr/text-label.js';
@@ -112,6 +114,8 @@ export class Viewer {
 
 		this.head ={ position: new THREE.Vector3(0, 1.6, 0), direction: new THREE.Vector3(0, 0, -1), yaw: 0 };
 		this.anchorWorld = new THREE.Vector3();
+		this.eyeLeft = new THREE.Vector3();
+		this.eyeRight = new THREE.Vector3();
 		this.hudYaw = 0;
 		this.hudAlpha = 0;
 		this.rigFollowing = false;
@@ -157,16 +161,26 @@ export class Viewer {
 		this.nameLabel.position.set(0, R_ORB + 0.05, 0);
 		this.orbAnchor.add(this.nameLabel);
 
+		this.hasGlobe = this.config.globe !== false && this.items.some((item) => itemCoordinates(item));
 		this.gallery = new VRGallery({
 			items: this.items,
 			accent: ACCENT,
 			onSelect: (path) => this.selectPanorama(path),
 			onExit: () => this.requestExitVR(),
+			onGlobe: this.hasGlobe ? () => this.runWhenIdle('globe', () => this.openGlobe()) : undefined,
+		});
+		this.globePanel = new VRGlobePanel({
+			items: this.items,
+			accent: ACCENT,
+			config: this.config,
+			resolveUrl: this.resolveUrl,
+			onSelect: (path) => this.selectFromGlobe(path),
+			onBack: () => this.runWhenIdle('toggle', () => this.closeGlobe()),
 		});
 		this.setCurrentPhoto(this.current);
 		this.gallery.panel.position.copy(PANEL_OFFSET);
 		this.gallery.panel.rotation.x = -Math.atan2(-PANEL_OFFSET.y, -PANEL_OFFSET.z);
-		this.rig.add(this.gallery.panel);
+		this.rig.add(this.gallery.panel, this.globePanel.panel);
 		this.scene.add(this.rig);
 
 		this.hud = createHudButton();
@@ -198,14 +212,17 @@ export class Viewer {
 			cursor.visible = false;
 			this.scene.add(controller, cursor);
 
-			const pointer = { controller, ray, cursor, source: null, hovered: null, menuDown: false, axisDirection: 0 };
+			// drag: the object a held trigger / pinch is dragging (the globe)
+			const pointer = { controller, ray, cursor, source: null, hovered: null, drag: null, menuDown: false, axisDirection: 0 };
 			pointer.listeners = {
 				connected: (event) => { pointer.source = event.data; },
 				disconnected: () => {
+					this.onSelectEnd(pointer);
 					this.setHover(pointer, null);
 					pointer.source = null;
 				},
 				selectstart: () => this.onSelect(pointer),
+				selectend: () => this.onSelectEnd(pointer),
 				squeezestart: () => this.toggleGallery(),
 			};
 			for (const [type, listener] of Object.entries(pointer.listeners)) controller.addEventListener(type, listener);
@@ -276,8 +293,10 @@ export class Viewer {
 	// --- Frame loop ------------------------------------------------------
 
 	loop(time, frame) {
-		if (this.destroyed) return;
-		const dt = this.lastTime ? Math.min((time - this.lastTime) / 1000, 0.1) : 0;
+		// The loop is set after the session started, so three.js also runs it from the window's
+		// requestAnimationFrame (no XR frame, stale head pose, another clock): only XR frames count.
+		if (this.destroyed || !frame) return;
+		const dt = this.lastTime ? THREE.MathUtils.clamp((time - this.lastTime) / 1000, 0, 0.1) : 0;
 		this.lastTime = time;
 		this.frameCount++;
 
@@ -287,9 +306,10 @@ export class Viewer {
 			if (this.frameCount === 4) this.startIntro();
 
 			this.animator.tick(time);
-			this.pollGamepads();
+			this.pollGamepads(dt);
 			this.followRig(dt);
 			this.gallery.update(dt);
+			this.globePanel.update(dt, this.head.position);
 			this.updateHud(dt);
 			this.updatePointers();
 			this.updateScene(dt);
@@ -315,7 +335,10 @@ export class Viewer {
 
 	updateHead() {
 		const camera = this.renderer.xr.getCamera();
-		camera.getWorldPosition(this.head.position);
+		// Until it renders, the XR camera holds the first eye's pose: use the point between the eyes.
+		const [left, right] = camera.cameras;
+		if (left && right) this.head.position.copy(left.getWorldPosition(this.eyeLeft)).lerp(right.getWorldPosition(this.eyeRight), 0.5);
+		else camera.getWorldPosition(this.head.position);
 		camera.getWorldDirection(this.head.direction);
 		this.head.yaw = Math.atan2(-this.head.direction.x, -this.head.direction.z);
 	}
@@ -327,7 +350,7 @@ export class Viewer {
 	}
 
 	followRig(dt) {
-		if (this.sphere.k <= 0 && !this.gallery.visible) return;
+		if (this.sphere.k <= 0 && !this.gallery.visible && !this.globePanel.visible) return;
 		const difference = wrapAngle(this.head.yaw - this.rig.rotation.y);
 		if (Math.abs(difference) > FOLLOW_ANGLE) this.rigFollowing = true;
 		if (this.rigFollowing) {
@@ -366,7 +389,7 @@ export class Viewer {
 
 	// --- Input -----------------------------------------------------------
 
-	pollGamepads() {
+	pollGamepads(dt) {
 		for (const pointer of this.pointers) {
 			const gamepad = pointer.source?.gamepad;
 			if (!gamepad) continue;
@@ -376,6 +399,12 @@ export class Viewer {
 			pointer.menuDown = menuDown;
 
 			const x = gamepad.axes[2] ?? 0;
+			if (this.globePanel.visible) {
+				// Held, not flicked: turns and zooms the globe.
+				this.globePanel.stick(x, gamepad.axes[3] ?? 0, dt);
+				pointer.axisDirection = Math.abs(x) > AXIS_OFF ? Math.sign(x) : 0;
+				continue;
+			}
 			if (Math.abs(x) < AXIS_OFF) {
 				pointer.axisDirection = 0;
 			} else if (Math.abs(x) > AXIS_ON && pointer.axisDirection === 0) {
@@ -387,6 +416,7 @@ export class Viewer {
 
 	onStick(pointer, direction) {
 		this.dismissHint();
+		if (this.globePanel.visible) return;
 		if (this.gallery.visible) {
 			if (this.gallery.changePage(direction)) this.pulse(pointer, 0.3, 25);
 		} else {
@@ -395,7 +425,7 @@ export class Viewer {
 	}
 
 	getInteractives() {
-		const targets = this.gallery.getInteractives();
+		const targets = [...this.gallery.getInteractives(), ...this.globePanel.getInteractives()];
 		if (this.hud.visible && this.hudAlpha > 0.6) targets.push(this.hud);
 		return targets;
 	}
@@ -412,8 +442,9 @@ export class Viewer {
 
 			pointer.controller.updateMatrixWorld();
 			this.raycaster.setFromXRController(pointer.controller);
+			if (pointer.drag) pointer.drag.userData.onDrag?.(this.raycaster.ray);
 			const hit = this.raycaster.intersectObjects(targets, false)[0];
-			this.setHover(pointer, hit ? hit.object : null);
+			this.setHover(pointer, pointer.drag ?? (hit ? hit.object : null));
 
 			pointer.ray.visible = true;
 			pointer.ray.scale.z = hit ? hit.distance : 1.5;
@@ -439,8 +470,24 @@ export class Viewer {
 		this.dismissHint();
 		const target = pointer.hovered;
 		if (!target) return;
+		if (target.userData.onPress) {
+			// Press-and-hold targets (the globe surface) follow the ray until released.
+			pointer.controller.updateMatrixWorld();
+			this.raycaster.setFromXRController(pointer.controller);
+			if (target.userData.onPress(this.raycaster.ray)) {
+				pointer.drag = target;
+				this.pulse(pointer, 0.3, 20);
+			}
+			return;
+		}
 		this.pulse(pointer, 0.6, 40);
 		target.userData.onActivate?.();
+	}
+
+	onSelectEnd(pointer) {
+		if (!pointer.drag) return;
+		pointer.drag.userData.onRelease?.();
+		pointer.drag = null;
 	}
 
 	pulse(pointer, intensity, duration) {
@@ -453,6 +500,7 @@ export class Viewer {
 	onKeyDown(event) {
 		if (event.repeat) return;
 		if (event.code === 'KeyG') this.toggleGallery();
+		else if (event.code === 'KeyM' && this.hasGlobe) this.runWhenIdle('globe', () => (this.globePanel.visible ? this.closeGlobe() : this.openGlobe()));
 		else if (event.code === 'ArrowLeft') this.onStick(null, -1);
 		else if (event.code === 'ArrowRight') this.onStick(null, 1);
 	}
@@ -498,6 +546,7 @@ export class Viewer {
 	setCurrentPhoto(path) {
 		this.current = path;
 		this.gallery.setCurrent(path);
+		this.globePanel.setCurrent(path);
 		const item = this.items.find((entry) => entry.path === path);
 		this.nameLabel.setText(item?.name || (path ? decodeURIComponent(path.split('/').pop()) : ''));
 	}
@@ -511,9 +560,8 @@ export class Viewer {
 			localStorage.setItem(HINT_STORAGE_KEY, '1');
 		} catch { /* no storage: show it this session */ }
 
-		const handsOnly = this.pointers.some((p) => p.source?.hand) && !this.pointers.some((p) => p.source?.gamepad && !p.source.hand);
 		const separator = { text: '   ·   ', style: 'muted' };
-		this.hint.setParts(handsOnly
+		this.hint.setParts(this.handsOnly()
 			? [{ text: 'Pinch', style: 'accent' }, ' the Gallery button below you to browse photos']
 			: [
 				{ text: 'B / Y', style: 'accent' }, '  Gallery', separator,
@@ -525,6 +573,10 @@ export class Viewer {
 		this.hint.position.copy(this.head.position).addScaledVector(forward, 1).add(new THREE.Vector3(0, -0.25, 0));
 		this.hint.lookAt(this.head.position);
 		this.hintAge = 0;
+	}
+
+	handsOnly() {
+		return this.pointers.some((p) => p.source?.hand) && !this.pointers.some((p) => p.source?.gamepad && !p.source.hand);
 	}
 
 	updateHint(dt) {
@@ -743,7 +795,8 @@ export class Viewer {
 	toggleGallery() {
 		this.dismissHint();
 		this.runWhenIdle('toggle', () => {
-			if (this.gallery.visible) this.closeGallery();
+			if (this.globePanel.visible) this.closeGlobe();
+			else if (this.gallery.visible) this.closeGallery();
 			else this.openGallery();
 		});
 	}
@@ -765,6 +818,62 @@ export class Viewer {
 		this.busy = true;
 		try {
 			this.gallery.hide();
+			await this.expand();
+		} finally {
+			this.endBusy();
+		}
+	}
+
+	// The globe takes the photo orb's place; the orb shrinks away while it is open.
+	async openGlobe() {
+		if (this.busy || this.globePanel.visible || this.destroyed) return;
+		this.busy = true;
+		try {
+			if (this.sphere.k <= 0) this.placeRig();
+			this.gallery.hide();
+			this.globePanel.show(this.current, { handsOnly: this.handsOnly() });
+			await this.collapse();
+			await this.tweenOrbScale(0);
+		} finally {
+			this.endBusy();
+		}
+	}
+
+	// Back to the gallery.
+	async closeGlobe() {
+		if (this.busy || !this.globePanel.visible) return;
+		this.busy = true;
+		try {
+			this.globePanel.hide();
+			this.gallery.show();
+			if (this.sphere.hasTexture) await this.tweenOrbScale(1);
+		} finally {
+			this.endBusy();
+		}
+	}
+
+	async tweenOrbScale(target, duration = 300) {
+		const from = this.sphere.orbScale;
+		if (from === target) return;
+		await this.animator.tween({
+			duration,
+			update: (p) => { this.sphere.orbScale = from + (target - from) * p; },
+		});
+	}
+
+	selectFromGlobe(path) {
+		this.runWhenIdle('select', () => {
+			this.globePanel.hide();
+			if (path === this.current && this.sphere.hasTexture) this.returnToPhoto();
+			else this.showPanorama(path);
+		});
+	}
+
+	async returnToPhoto() {
+		if (this.busy) return;
+		this.busy = true;
+		try {
+			await this.tweenOrbScale(1);
 			await this.expand();
 		} finally {
 			this.endBusy();
@@ -817,6 +926,7 @@ export class Viewer {
 		this.layer = null;
 		this.sphere.dispose();
 		this.gallery.dispose();
+		this.globePanel.dispose();
 		this.loadingRing.dispose();
 		this.scene.traverse((object) => {
 			object.geometry?.dispose();

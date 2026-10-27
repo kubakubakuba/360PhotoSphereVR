@@ -3,6 +3,7 @@
 // IndexedDB is unavailable, e.g. in some private browsing modes.
 
 import { readImageSize, isPanoramaSize } from './vr/image-size.js';
+import { readGps } from './vr/exif-gps.js';
 
 const DB_NAME = 'panorama-library';
 const DB_VERSION = 1;
@@ -97,11 +98,28 @@ export class LocalLibrary {
 			this.persistent = true;
 			const records = await request(this.db.transaction(STORE).objectStore(STORE).getAll());
 			records.forEach((record) => this.remember(record));
+			await this.fillGps(records.filter((record) => record.gps === undefined))
+				.catch((error) => console.warn('Local library: could not read GPS positions:', error));
 		} catch (error) {
 			console.warn('Local library: falling back to session-only storage:', error);
 			this.db = null;
 			this.persistent = false;
 		}
+	}
+
+	// Photos stored before GPS positions were read get them now (null = checked, has none).
+	async fillGps(records) {
+		if (records.length === 0) return;
+		for (const record of records) record.gps = await readGps(record.blob).catch(() => null);
+		const tx = this.db.transaction(STORE, 'readwrite');
+		records.forEach((record) => tx.objectStore(STORE).put(record));
+		await new Promise((resolve) => {
+			tx.oncomplete = resolve;
+			tx.onerror = tx.onabort = () => {
+				console.warn('Local library: could not save GPS positions:', tx.error);
+				resolve();
+			};
+		});
 	}
 
 	remember(record) {
@@ -127,6 +145,7 @@ export class LocalLibrary {
 					thumbnail: this.urls.get(record.id)?.thumb || '',
 					description: details.join(' · '),
 					local: true,
+					...(record.gps ? { lat: record.gps.lat, lon: record.gps.lon } : {}),
 				};
 			});
 	}
@@ -157,6 +176,7 @@ export class LocalLibrary {
 			}
 			try {
 				const { thumb, width, height } = await createThumbnail(file);
+				const gps = await readGps(file).catch(() => null);
 				const record = {
 					id: newId(),
 					name: stripExtension(file.name),
@@ -167,6 +187,7 @@ export class LocalLibrary {
 					added: Date.now(),
 					blob: file,
 					thumb,
+					gps,
 				};
 				if (this.db) {
 					const tx = this.db.transaction(STORE, 'readwrite');

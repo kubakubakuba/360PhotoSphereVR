@@ -18,6 +18,10 @@ services:
       VR_FOVEATION: ${VR_FOVEATION:-0}
       VR_FRAMEBUFFER_SCALE: ${VR_FRAMEBUFFER_SCALE:-0}
       VR_MAX_TEXTURE_SIZE: ${VR_MAX_TEXTURE_SIZE:-0}
+      GLOBE_ENABLED: ${GLOBE_ENABLED:-true}
+      GLOBE_TILE_URL: ${GLOBE_TILE_URL:-}
+      GLOBE_TILE_ATTRIBUTION: ${GLOBE_TILE_ATTRIBUTION:-}
+      GLOBE_TILE_MAX_ZOOM: ${GLOBE_TILE_MAX_ZOOM:-17}
     volumes:
       - ${IMAGES_DIR:-./imgs}:/usr/share/nginx/html/imgs:ro
       - ${THUMBS_DIR:-./thumb}:/usr/share/nginx/html/thumb:ro

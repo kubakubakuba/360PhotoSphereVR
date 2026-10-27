@@ -3,14 +3,15 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const VERSION = 1;
+const VERSION = 2;
 
+// Some photos have GPS positions for the map: Orange and Green share one place (a group).
 export const PHOTOS = [
-	{ file: 'p1.jpg', name: 'Fixture Cyan', color: [40, 170, 200] },
-	{ file: 'p2.jpg', name: 'Fixture Orange', color: [225, 125, 40], default: true },
-	{ file: 'p3.jpg', name: 'Fixture Green', color: [60, 175, 70] },
-	{ file: 'p4.jpg', name: 'Fixture Purple', color: [140, 80, 205] },
-	{ file: 'p5.jpg', name: 'Fixture Red', color: [215, 55, 75] },
+	{ file: 'p1.jpg', name: 'Fixture Cyan', color: [40, 170, 200], lat: 50.087, lon: 14.421 },
+	{ file: 'p2.jpg', name: 'Fixture Orange', color: [225, 125, 40], default: true, lat: 48.8584, lon: 2.2945 },
+	{ file: 'p3.jpg', name: 'Fixture Green', color: [60, 175, 70], lat: 48.8584, lon: 2.2945 },
+	{ file: 'p4.jpg', name: 'Fixture Purple', color: [140, 80, 205], lat: 40.6892, lon: -74.0445 },
+	{ file: 'p5.jpg', name: 'Fixture Red', color: [215, 55, 75], lat: 35.6586, lon: 139.7454 },
 	{ file: 'p6.jpg', name: 'Fixture Yellow', color: [205, 185, 45] },
 	{ file: 'p7.jpg', name: 'Fixture Blue', color: [50, 90, 215] },
 ];
@@ -60,12 +61,13 @@ export async function ensureFixtures(page, dir, { panoramaWidth = 4096 } = {}) {
 		thumbs: join(dir, 'thumb'),
 		gallery: join(dir, 'gallery.json'),
 		uploads: join(dir, 'uploads'),
+		tiles: join(dir, 'tiles'),
 	};
 	const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null;
 	if (manifest?.version === VERSION && manifest.panoramaWidth === panoramaWidth) return paths;
 
 	rmSync(dir, { recursive: true, force: true });
-	for (const sub of [paths.imgs, paths.thumbs, paths.uploads]) mkdirSync(sub, { recursive: true });
+	for (const sub of [paths.imgs, paths.thumbs, paths.uploads, paths.tiles]) mkdirSync(sub, { recursive: true });
 	const write = async (file, options) => writeFileSync(file, Buffer.from(await page.evaluate(render, options), 'base64'));
 
 	const gallery = [];
@@ -80,6 +82,7 @@ export async function ensureFixtures(page, dir, { panoramaWidth = 4096 } = {}) {
 			thumbnail: `./thumb/${thumb}`,
 			description: 'Test fixture',
 			...(photo.default ? { default: true } : {}),
+			...(photo.lat !== undefined ? { lat: photo.lat, lon: photo.lon } : {}),
 		});
 	}
 	writeFileSync(paths.gallery, JSON.stringify(gallery, null, 2));
@@ -88,9 +91,12 @@ export async function ensureFixtures(page, dir, { panoramaWidth = 4096 } = {}) {
 	await write(join(paths.uploads, trip.file), { width: trip.width, height: trip.height, color: trip.color, label: 'UP', type: 'image/jpeg', quality: 0.9 });
 	await write(join(paths.uploads, odd.file), { width: odd.width, height: odd.height, color: odd.color, label: 'ODD', type: 'image/webp', quality: 0.85 });
 	writeFileSync(join(paths.uploads, broken.file), 'this is not an image');
+	// Every map tile request in the tests gets this one tile.
+	await write(join(paths.tiles, 'tile.png'), { width: 256, height: 256, color: TILE_COLOR, type: 'image/png' });
 
 	writeFileSync(manifestPath, JSON.stringify({ version: VERSION, panoramaWidth }));
 	return paths;
 }
 
 export const photoPath = (photo) => `./imgs/${photo.file}`;
+export const TILE_COLOR = [230, 40, 230];

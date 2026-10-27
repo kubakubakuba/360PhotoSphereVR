@@ -70,8 +70,7 @@ svg {
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	padding: 14px 20px 40px;
-	background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+	padding: 14px 20px;
 	pointer-events: none; /* drags pass through to the panorama */
 }
 
@@ -79,15 +78,22 @@ svg {
 	pointer-events: auto;
 }
 
+/* A pill like the buttons, so the title stays readable on bright photos. */
 .brand {
 	display: flex;
 	align-items: center;
 	gap: 10px;
 	min-width: 0;
+	height: 36px;
+	padding: 0 14px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
 	font-size: 15px;
 	font-weight: 600;
 	letter-spacing: 0.01em;
-	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
 }
 
 .brand span {
@@ -612,6 +618,140 @@ body.in-vr .nav-arrow {
 	text-align: center;
 }
 
+/* --- Map dialog -------------------------------------------------------- */
+
+.globe-dialog {
+	width: min(1200px, calc(100vw - 32px));
+	height: min(86vh, 900px);
+	max-width: none;
+	max-height: none;
+	margin: auto;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	background: var(--bg-elevated);
+	color: var(--text);
+	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.globe-dialog[open] {
+	display: flex;
+	flex-direction: column;
+	animation: dialog-in 0.18s ease-out;
+}
+
+.globe-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.6);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
+}
+
+.globe-stage {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	background: radial-gradient(circle at 50% 45%, #121c2b 0%, #090b10 70%);
+}
+
+.globe-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+	cursor: grab;
+}
+
+.globe-canvas.dragging {
+	cursor: grabbing;
+}
+
+.globe-canvas.over-pin {
+	cursor: pointer;
+}
+
+.globe-card {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 2;
+	width: 240px;
+	padding: 12px 14px;
+	border: 1px solid var(--border-strong);
+	border-radius: 12px;
+	background: var(--surface);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+	pointer-events: none; /* the pin and orb underneath take the clicks */
+}
+
+.globe-card h3 {
+	overflow: hidden;
+	font-size: 14px;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.globe-card p {
+	display: -webkit-box;
+	margin-top: 4px;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 12.5px;
+	line-height: 1.45;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+.globe-card-footer {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 8px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.globe-card-action {
+	margin-left: auto;
+	color: var(--accent);
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.globe-zoom {
+	position: absolute;
+	right: 16px;
+	bottom: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 4px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--surface);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+}
+
+.globe-zoom .icon-btn {
+	color: var(--text);
+}
+
+.globe-attribution {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	max-width: calc(100% - 80px);
+	padding: 3px 8px;
+	border-top-right-radius: 8px;
+	background: rgba(11, 13, 16, 0.65);
+	color: var(--muted);
+	font-size: 11px;
+}
+
 /* --- Drag & drop, toast ------------------------------------------------ */
 
 .drop-overlay {
@@ -676,7 +816,7 @@ body.in-vr .nav-arrow {
 
 @media (max-width: 640px) {
 	.topbar {
-		padding: 10px 12px 32px;
+		padding: 10px 12px;
 	}
 
 	.status-pill {
@@ -731,6 +871,15 @@ body.in-vr .nav-arrow {
 
 	.dialog-body {
 		padding: 14px;
+	}
+}
+
+@media (max-width: 640px) {
+	.globe-dialog {
+		width: 100vw;
+		height: 100dvh;
+		border: 0;
+		border-radius: 0;
 	}
 }
 

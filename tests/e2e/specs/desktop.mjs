@@ -83,6 +83,17 @@ export default {
 			await waitForColor(page, target.color);
 		}],
 
+		['a photo that loads clears the error of one that did not', async (ctx, { page }) => {
+			const status = () => page.evaluate(() => document.getElementById('vr-status-text').textContent);
+			await page.evaluate(() => { location.hash = 'panorama=./imgs/missing.jpg'; });
+			await page.waitFor(async () => (await status()) === 'Could not load panorama', { message: 'error status' });
+			const target = PHOTOS[4];
+			await page.evaluate((path) => { location.hash = `panorama=${encodeURIComponent(path)}`; }, photoPath(target));
+			await waitForColor(page, target.color);
+			await page.waitFor(async () => /No VR headset detected|WebXR not available/.test(await status()), { message: 'status back to normal' });
+			page.errors.length = 0; // the failed photo is logged on purpose
+		}],
+
 		['arrows and ←/→ keys step through photos, with the name in the top bar', async (ctx, { page }) => {
 			const photoTitle = () => page.evaluate(() => document.getElementById('photo-title').textContent);
 			const expect = async (photo) => {

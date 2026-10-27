@@ -28,6 +28,10 @@ For the headset to connect over LAN, add its address to `SSL_SAN` (e.g. `IP:192.
 | `VR_FOVEATION` | `0` | Fixed foveation, 0 (off) – 1 (max) |
 | `VR_FRAMEBUFFER_SCALE` | `0` | Eye buffer scale, `0` = device native |
 | `VR_MAX_TEXTURE_SIZE` | `0` | Max panorama size in VR in px, `0` = 8192 (≈ Quest 3 display resolution) |
+| `GLOBE_ENABLED` | `true` | Map / globe of the photos that have a GPS position |
+| `GLOBE_TILE_URL` | Esri World Imagery | Map tiles loaded when zooming in (`{z}`/`{x}`/`{y}` template, must allow CORS); `off` = built-in Earth texture only |
+| `GLOBE_TILE_ATTRIBUTION` | Esri credit | Shown while tiles are visible (set it when you change the tile URL) |
+| `GLOBE_TILE_MAX_ZOOM` | `17` | Most detailed tile level |
 
 Without Docker (e.g. GitHub Pages) the same settings live in `config.js`.
 
@@ -36,15 +40,31 @@ Without Docker (e.g. GitHub Pages) the same settings live in `config.js`.
 `gallery.json` is a list of entries (see `_gallery.json`). JPEG, PNG, WebP and AVIF are supported.
 
 ```sh
-python thumbs.py imgs thumb                 # thumbnails (WebP by default)
+python thumbs.py imgs thumb                 # thumbnails and map previews (WebP by default)
 python listgenerator.py imgs thumb --output-file gallery.json --default DJI_0423.JPG
 ```
+
+`listgenerator.py` reads the GPS position from each photo's EXIF (DJI drones write it) into `lat` / `lon`.
+Positions you enter by hand in `gallery.json` are kept when you regenerate it, and they take priority over EXIF.
+
+### Map
+
+The *Map* button (and *Globe* in the VR gallery) shows a globe with a pin for every photo that has a position.
+Hover or point at a pin to see the photo as a spinning orb, click / pull the trigger to open it. Photos taken at
+the same place share a pin and take turns in the orb; pins that only overlap at the current zoom split up when
+you select them. The globe opens where you left it last time.
+
+When the device can reach the tile server, the globe shows map tiles: the whole Earth when zoomed out, down to
+street level when zoomed in, with coarser tiles filling in around the view. Tiles already loaded stay until the
+cache needs room (the browser's HTTP cache keeps them across visits). Offline, a built-in NASA Blue Marble texture
+is shown instead. `thumbs.py` writes small 2:1
+`*.preview.webp` files that the orb loads instead of the full photo.
 
 ### Your own photos
 
 Drag & drop 360° photos onto the page, or use *Add photos* in the gallery. They are stored in the browser
 (IndexedDB) on that device only, never uploaded to the server, and appear under *On this device* and in the
-in-VR gallery. On Quest, add them in the browser before entering VR.
+in-VR gallery. On Quest, add them in the browser before entering VR. JPEGs with a GPS position show up on the map.
 
 ## VR controls
 
@@ -54,6 +74,12 @@ in-VR gallery. On Quest, add them in the browser before entering VR.
 | Select | Trigger | Pinch |
 | Previous / next photo | Thumbstick left / right | Gallery |
 | Change gallery page | Thumbstick left / right (gallery open) | Arrows under the cards |
+| Open the globe | *Globe* button in the gallery | *Globe* button in the gallery |
+| Turn the globe | Trigger and drag, or thumbstick left / right | Pinch and drag |
+| Zoom the globe | Thumbstick forward / back | *+* / *−* buttons |
+| Back to the gallery | B / Y or grip | *Gallery* button |
+
+Earth texture: [NASA Visible Earth, Blue Marble Next Generation](https://visibleearth.nasa.gov/collection/1484/blue-marble) (public domain).
 
 Roadmap:
 - [x] Implement PC scrolling view
@@ -65,3 +91,4 @@ Roadmap:
 - [x] Fix default image (load random image from gallery folder / or load some preselected - define in gallery.json)
 - [ ] Write usage manual README
 - [x] Make environment variables for configurable settings (in Docker)
+- [x] Map / globe of the photo locations (desktop and VR)

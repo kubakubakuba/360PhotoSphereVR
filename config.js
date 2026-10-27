@@ -10,4 +10,9 @@ window.APP_CONFIG = {
 	vrFoveation: 0, // 0 = full resolution everywhere, 1 = maximum fixed foveation
 	vrFramebufferScale: 0, // 0 = device native (capped at 1.5)
 	vrMaxTextureSize: 0, // 0 = 8192 (about the Quest 3 display resolution), capped by the GPU limit
+	globe: true, // map / globe of the photos with GPS positions (shown when any photo has one)
+	// Online map tiles shown when zooming in ({z}/{x}/{y} template, must allow CORS); empty = built-in Earth texture only
+	globeTileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+	globeTileAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+	globeTileMaxZoom: 17,
 };

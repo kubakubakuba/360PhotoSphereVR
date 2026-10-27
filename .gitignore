@@ -13,6 +13,7 @@ thumb/
 
 gallery.json
 !placeholder_thumbnail.png
+!lib/earth/blue-marble.jpg
 certs/
 .env
 __pycache__/

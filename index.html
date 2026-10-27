@@ -26,6 +26,10 @@
 				<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
 				<span class="label">Gallery</span>
 			</button>
+			<button id="open-globe-btn" class="btn btn-ghost" type="button" hidden>
+				<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z"/></svg>
+				<span class="label">Map</span>
+			</button>
 			<button id="enter-vr" class="btn btn-primary" type="button" disabled>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h13A2.5 2.5 0 0 1 21 8.5v6a2.5 2.5 0 0 1-2.5 2.5h-3.2a2 2 0 0 1-1.7-1l-.9-1.5a.8.8 0 0 0-1.4 0l-.9 1.5a2 2 0 0 1-1.7 1H5.5A2.5 2.5 0 0 1 3 14.5z"/></svg>
 				<span class="label">Enter VR</span>
@@ -61,6 +65,34 @@
 				<h3 class="section-title">Gallery</h3>
 				<div id="gallery-grid" class="gallery-grid"></div>
 			</section>
+		</div>
+	</dialog>
+
+	<dialog id="globe-modal" class="globe-dialog" aria-labelledby="globe-title">
+		<div class="dialog-header">
+			<h2 id="globe-title">Map</h2>
+			<button id="globe-close" class="icon-btn" type="button" aria-label="Close map">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+			</button>
+		</div>
+		<div id="globe-stage" class="globe-stage">
+			<div id="globe-card" class="globe-card" hidden>
+				<h3 id="globe-card-title"></h3>
+				<p id="globe-card-description"></p>
+				<div class="globe-card-footer">
+					<span id="globe-card-count"></span>
+					<span id="globe-card-action" class="globe-card-action"></span>
+				</div>
+			</div>
+			<div class="globe-zoom">
+				<button id="globe-zoom-in" class="icon-btn" type="button" aria-label="Zoom in">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+				</button>
+				<button id="globe-zoom-out" class="icon-btn" type="button" aria-label="Zoom out">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+				</button>
+			</div>
+			<div id="globe-attribution" class="globe-attribution" hidden></div>
 		</div>
 	</dialog>
 

@@ -19,6 +19,7 @@ import { loadVendorScripts, emulatorScript } from './lib/vendor.mjs';
 import desktop from './specs/desktop.mjs';
 import localLibrary from './specs/local-library.mjs';
 import imageSource from './specs/image-source.mjs';
+import globe from './specs/globe.mjs';
 import { vrSpec } from './specs/vr.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -31,8 +32,22 @@ const headed = args.includes('--headed');
 const large = args.includes('--large');
 const filters = args.filter((arg) => !arg.startsWith('--'));
 
-const ALL_SPECS = [desktop, localLibrary, imageSource, vrSpec({ layers: false }), vrSpec({ layers: true })];
+const ALL_SPECS = [desktop, localLibrary, imageSource, globe, vrSpec({ layers: false }), vrSpec({ layers: true })];
 const specs = ALL_SPECS.filter((spec) => filters.length === 0 || filters.some((filter) => spec.name.includes(filter)));
+
+// Merges `overrides` into whatever config.js assigns to window.APP_CONFIG.
+// Map tiles are off unless a test asks for them, so tests never reach the internet.
+function configOverride(overrides) {
+	const merged = JSON.stringify({ globeTileUrl: '', ...overrides });
+	return `(() => {
+		let value;
+		Object.defineProperty(window, 'APP_CONFIG', {
+			configurable: true,
+			get: () => value,
+			set: (config) => { value = { ...config, ...${merged} }; },
+		});
+	})();`;
+}
 
 const color = (code) => (text) => (process.stdout.isTTY ? `\x1b[${code}m${text}\x1b[0m` : text);
 const green = color(32);
@@ -63,6 +78,7 @@ async function main() {
 			'/imgs/': fixtures.imgs,
 			'/thumb/': fixtures.thumbs,
 			'/uploads/': fixtures.uploads,
+			'/tiles/': fixtures.tiles,
 			'/gallery.json': fixtures.gallery,
 		},
 	});
@@ -74,10 +90,11 @@ async function main() {
 		const ctx = {
 			server,
 			fixtures,
-			async newPage({ vr = false, layers = false } = {}) {
+			// config: overrides for config.js (window.APP_CONFIG)
+			async newPage({ vr = false, layers = false, config = {} } = {}) {
 				const browser = await launchBrowser({ headed });
 				browsers.push(browser);
-				await browser.page.init({ scripts: [gpuTracker, ...(vr ? [emulatorScript(vendor, { layers })] : [])] });
+				await browser.page.init({ scripts: [gpuTracker, configOverride(config), ...(vr ? [emulatorScript(vendor, { layers })] : [])] });
 				return browser.page;
 			},
 		};

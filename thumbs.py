@@ -19,6 +19,16 @@ def crop_center_square(img: Image.Image, crop_size: int) -> Image.Image:
 
 	return img.crop((left, top, right, bottom))
 
+def thumbnail(img: Image.Image, crop_size: int, thumb_size: int) -> Image.Image:
+	"""Square thumbnail from the center of the image"""
+	cropped = crop_center_square(img, crop_size)
+	cropped.thumbnail((thumb_size, thumb_size))
+	return cropped
+
+def preview(img: Image.Image, width: int) -> Image.Image:
+	"""The whole panorama, downscaled to 2:1"""
+	return img.resize((width, width // 2), Image.Resampling.LANCZOS)
+
 @app.command()
 def generate_thumbs(
 	input_dir: Path = typer.Argument(..., help="Directory containing 360-degree images"),
@@ -29,10 +39,14 @@ def generate_thumbs(
 	suffix: str = typer.Option(".thumb", help="Suffix to append to filename"),
 	format: str = typer.Option("webp", help="Thumbnail format: webp, jpg, png, avif or 'same' to keep the source format"),
 	overwrite: bool = typer.Option(False, help="Overwrite existing thumbnails"),
+	previews: bool = typer.Option(True, help="Also write small 2:1 previews (the spinning orb on the map)"),
+	preview_width: int = typer.Option(1024, help="Preview width in pixels (height is half)"),
+	preview_suffix: str = typer.Option(".preview", help="Suffix to append to preview file names"),
 ):
 	"""
 	Generate thumbnails from 360-degree images by cropping center portion.
 	For stereographic 360 images (like DJI drone photos).
+	With --previews (default), also a downscaled copy of the whole panorama for the map's preview orb.
 	"""
 	output_dir.mkdir(parents=True, exist_ok=True)
 	format = format.lower().lstrip('.')
@@ -45,27 +59,30 @@ def generate_thumbs(
 	for input_path in sorted(input_dir.iterdir()):
 		if input_path.suffix.lower() in IMAGE_EXTENSIONS:
 			extension = input_path.suffix if format == 'same' else f".{format}"
-			output_path = output_dir / f"{input_path.stem}{suffix}{extension}"
+			save_format = SAVE_FORMATS.get(extension.lower().lstrip('.'))
+			outputs = [(output_dir / f"{input_path.stem}{suffix}{extension}", lambda img: thumbnail(img, crop_size, thumb_size))]
+			if previews:
+				outputs.append((output_dir / f"{input_path.stem}{preview_suffix}{extension}", lambda img: preview(img, preview_width)))
 
-			if not overwrite and output_path.exists():
-				typer.echo(f"Skipping (exists): {input_path.name}")
-				skipped += 1
+			pending = []
+			for output_path, make in outputs:
+				if overwrite or not output_path.exists():
+					pending.append((output_path, make))
+				else:
+					typer.echo(f"Skipping (exists): {output_path.name}")
+					skipped += 1
+			if not pending:
 				continue
 
 			try:
 				with Image.open(input_path) as img:
-					cropped = crop_center_square(img, crop_size)
-
-					cropped.thumbnail((thumb_size, thumb_size))
-
-					save_format = SAVE_FORMATS.get(extension.lower().lstrip('.'))
-					if save_format == 'JPEG' and cropped.mode not in ('RGB', 'L'):
-						cropped = cropped.convert('RGB')
-
-					cropped.save(output_path, format=save_format, quality=quality)
-
-					typer.echo(f"Created: {output_path.name}")
-					processed += 1
+					for output_path, make in pending:
+						result = make(img)
+						if save_format == 'JPEG' and result.mode not in ('RGB', 'L'):
+							result = result.convert('RGB')
+						result.save(output_path, format=save_format, quality=quality)
+						typer.echo(f"Created: {output_path.name}")
+						processed += 1
 
 			except Exception as e:
 				typer.echo(f"Error processing {input_path.name}: {str(e)}", err=True)

@@ -4,8 +4,11 @@
     "name": "Default View (DJI)",
     "path": "./imgs/DJI_0423.JPG",
     "thumbnail": "./thumb/DJI_0423.thumb.JPG",
+    "preview": "./thumb/DJI_0423.preview.webp",
     "description": "The default panoramic image.",
-    "default": true
+    "default": true,
+    "lat": 50.087451,
+    "lon": 14.420671
   },
   {
     "id": "dji_0081",

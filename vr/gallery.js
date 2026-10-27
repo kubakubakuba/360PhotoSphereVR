@@ -58,12 +58,14 @@ function fileName(path) {
 }
 
 export class VRGallery {
-	constructor({ items = [], accent = '#43cea2', placeholder = 'placeholder_thumbnail.png', onSelect, onExit }) {
+	// onGlobe: opens the globe; without it there is no Globe button
+	constructor({ items = [], accent = '#43cea2', placeholder = 'placeholder_thumbnail.png', onSelect, onExit, onGlobe }) {
 		this.items = items;
 		this.accent = accent;
 		this.placeholder = placeholder;
 		this.onSelect = onSelect;
 		this.onExit = onExit;
+		this.onGlobe = onGlobe;
 
 		this.panel = new THREE.Group();
 		this.panel.visible = false;
@@ -145,6 +147,13 @@ export class VRGallery {
 
 		this.buttons = [this.prevButton, this.nextButton, this.exitButton];
 
+		if (this.onGlobe) {
+			this.globeButton = button(this.makeGlobeTexture(), 0.15, 0.045, () => this.onGlobe());
+			this.globeButton.position.set(-DISTANCE * Math.sin(sideTheta), footerY, DISTANCE * (1 - Math.cos(sideTheta)));
+			this.globeButton.rotation.y = sideTheta;
+			this.buttons.push(this.globeButton);
+		}
+
 		this.pager = makeCanvas(512, 64);
 		this.pagerTexture = makeTexture(this.pager.canvas);
 		this.pagerMesh = new THREE.Mesh(
@@ -201,6 +210,32 @@ export class VRGallery {
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 		ctx.fillText('Exit VR', 192, 60);
+		return makeTexture(canvas);
+	}
+
+	makeGlobeTexture() {
+		const { canvas, ctx } = makeCanvas(384, 116);
+		ctx.fillStyle = COLORS.surfaceAlt;
+		ctx.strokeStyle = COLORS.border;
+		ctx.lineWidth = 4;
+		ctx.beginPath();
+		ctx.roundRect(2, 2, 380, 112, 56);
+		ctx.fill();
+		ctx.stroke();
+		// Globe icon: circle, equator and a meridian.
+		ctx.strokeStyle = this.accent;
+		ctx.lineWidth = 6;
+		ctx.beginPath();
+		ctx.arc(110, 58, 26, 0, Math.PI * 2);
+		ctx.moveTo(84, 58);
+		ctx.lineTo(136, 58);
+		ctx.moveTo(110, 32);
+		ctx.ellipse(110, 58, 11, 26, 0, -Math.PI / 2, Math.PI * 1.5);
+		ctx.stroke();
+		ctx.fillStyle = COLORS.text;
+		ctx.font = `600 44px ${FONT}`;
+		ctx.textBaseline = 'middle';
+		ctx.fillText('Globe', 156, 60);
 		return makeTexture(canvas);
 	}
 

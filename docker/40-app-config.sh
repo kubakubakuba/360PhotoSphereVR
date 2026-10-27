@@ -4,6 +4,17 @@ set -eu
 
 OUT=/usr/share/nginx/html/config.js
 
+# Map tiles: empty = Esri World Imagery (with its attribution), "off" = built-in Earth texture only
+DEFAULT_TILE_URL='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+TILE_URL=${GLOBE_TILE_URL:-$DEFAULT_TILE_URL}
+TILE_ATTRIBUTION=${GLOBE_TILE_ATTRIBUTION:-}
+if [ -z "${GLOBE_TILE_URL:-}" ] && [ -z "$TILE_ATTRIBUTION" ]; then
+    TILE_ATTRIBUTION='Imagery © Esri, Maxar, Earthstar Geographics'
+fi
+case "$(printf '%s' "$TILE_URL" | tr 'A-Z' 'a-z')" in
+    off|none|false) TILE_URL='' ;;
+esac
+
 str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/</\\u003c/g')"; }
 bool() {
     case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
@@ -26,6 +37,10 @@ window.APP_CONFIG = {
 	vrFoveation: $(num "${VR_FOVEATION:-0}" 0),
 	vrFramebufferScale: $(num "${VR_FRAMEBUFFER_SCALE:-0}" 0),
 	vrMaxTextureSize: $(num "${VR_MAX_TEXTURE_SIZE:-0}" 0),
+	globe: $(bool "${GLOBE_ENABLED:-true}"),
+	globeTileUrl: $(str "$TILE_URL"),
+	globeTileAttribution: $(str "$TILE_ATTRIBUTION"),
+	globeTileMaxZoom: $(num "${GLOBE_TILE_MAX_ZOOM:-17}" 17),
 };
 CONFIG
 

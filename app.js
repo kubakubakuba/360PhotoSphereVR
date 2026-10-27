@@ -1,5 +1,6 @@
 import { Viewer as PhotoSphereViewer } from '@photo-sphere-viewer/core';
 import { LocalLibrary } from './local-library.js';
+import { itemCoordinates } from './vr/geo.js';
 
 const DEFAULT_CONFIG = {
 	title: '360° Photo Sphere',
@@ -10,16 +11,23 @@ const DEFAULT_CONFIG = {
 	vrFoveation: 0,
 	vrFramebufferScale: 0,
 	vrMaxTextureSize: 0,
+	globe: true,
+	globeTileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+	globeTileAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+	globeTileMaxZoom: 17,
 };
 const config = { ...DEFAULT_CONFIG, ...(window.APP_CONFIG || {}) };
 const FALLBACK_PANORAMA = 'DEFAULT.JPG';
 const PLACEHOLDER_THUMBNAIL = 'placeholder_thumbnail.png';
 const EXIT_TIMEOUT_MS = 2000;
+const PANORAMA_ERROR = 'Could not load panorama';
 
 let panoramaViewer = null;
 let vrViewer = null;
 let vrSession = null;
 let viewerModule = null;
+let globeModule = null;
+let globeView = null;
 let exitFallbackTimer = null;
 let galleryItems = [];
 let currentPanorama = null;
@@ -41,6 +49,18 @@ const els = {
 	progress: $('progress-bar'),
 	modal: $('gallery-modal'),
 	modalClose: $('gallery-close'),
+	openGlobe: $('open-globe-btn'),
+	globeModal: $('globe-modal'),
+	globeClose: $('globe-close'),
+	globeStage: $('globe-stage'),
+	globeAttribution: $('globe-attribution'),
+	globeZoomIn: $('globe-zoom-in'),
+	globeZoomOut: $('globe-zoom-out'),
+	globeCard: $('globe-card'),
+	globeCardTitle: $('globe-card-title'),
+	globeCardDescription: $('globe-card-description'),
+	globeCardCount: $('globe-card-count'),
+	globeCardAction: $('globe-card-action'),
 	grid: $('gallery-grid'),
 	localGrid: $('local-grid'),
 	fileInput: $('file-input'),
@@ -135,7 +155,11 @@ function initPanoramaViewer(path) {
 	});
 	panoramaViewer.addEventListener('panorama-error', (event) => {
 		console.error('Panorama failed to load:', event.error);
-		setStatus('error', 'Could not load panorama');
+		setStatus('error', PANORAMA_ERROR);
+	});
+	// A photo that loads clears the error of one that didn't.
+	panoramaViewer.addEventListener('panorama-loaded', () => {
+		if (els.statusText.textContent === PANORAMA_ERROR) showXrStatus();
 	});
 }
 
@@ -227,6 +251,8 @@ function renderGallery() {
 		els.grid.replaceChildren(...galleryItems.map(createGalleryCard));
 	}
 	refreshCurrentPhoto();
+	els.openGlobe.hidden = !globeAvailable();
+	globeView?.setItems(allItems(), currentPanorama);
 }
 
 function photoName(path) {
@@ -264,7 +290,7 @@ function onArrowKey(event) {
 	if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 	if (vrSession || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
 	// In fullscreen the arrow keys rotate the view (Photo Sphere Viewer keyboard control).
-	if (els.modal.open || document.fullscreenElement) return;
+	if (els.modal.open || els.globeModal.open || document.fullscreenElement) return;
 	if (event.target.closest?.('input, textarea, select, [contenteditable]')) return;
 	event.preventDefault();
 	stepPhoto(event.key === 'ArrowRight' ? 1 : -1);
@@ -273,6 +299,52 @@ function onArrowKey(event) {
 function openGalleryModal() {
 	els.modal.showModal();
 	els.modal.querySelector('.gallery-card[aria-current]')?.scrollIntoView({ block: 'nearest' });
+}
+
+// --- Map ----------------------------------------------------------------
+
+function globeAvailable() {
+	return config.globe !== false && allItems().some((item) => itemCoordinates(item));
+}
+
+async function openGlobeModal() {
+	if (els.modal.open) els.modal.close();
+	els.globeModal.showModal();
+	try {
+		const { GlobeView } = await (globeModule ??= import('./globe-view.js'));
+		if (!els.globeModal.open || globeView) return;
+		globeView = new GlobeView({
+			stage: els.globeStage,
+			card: {
+				root: els.globeCard,
+				title: els.globeCardTitle,
+				description: els.globeCardDescription,
+				count: els.globeCardCount,
+				action: els.globeCardAction,
+			},
+			attribution: els.globeAttribution,
+			zoom: { in: els.globeZoomIn, out: els.globeZoomOut },
+			items: allItems(),
+			current: currentPanorama,
+			config,
+			resolveUrl,
+			onOpen: (path) => {
+				window.location.hash = `panorama=${encodeURIComponent(path)}`;
+				els.globeModal.close();
+			},
+		});
+	} catch (error) {
+		console.error('Could not open the map:', error);
+		showToast('Could not open the map.', 'error');
+		els.globeModal.close();
+	}
+}
+
+// The close event arrives a task later: the map may have been opened again in between.
+function closeGlobeView() {
+	if (els.globeModal.open) return;
+	globeView?.destroy();
+	globeView = null;
 }
 
 // --- Local photos -------------------------------------------------------
@@ -354,20 +426,21 @@ function setupDragAndDrop() {
 // --- WebXR --------------------------------------------------------------
 
 async function detectXrSupport() {
-	if (!navigator.xr) {
-		setStatus('idle', window.isSecureContext ? 'WebXR not available' : 'VR requires HTTPS');
-		return;
+	if (navigator.xr) {
+		const check = (mode) => navigator.xr.isSessionSupported(mode).catch(() => false);
+		[xrSupport.vr, xrSupport.ar] = await Promise.all([check('immersive-vr'), check('immersive-ar')]);
 	}
-	const check = (mode) => navigator.xr.isSessionSupported(mode).catch(() => false);
-	[xrSupport.vr, xrSupport.ar] = await Promise.all([check('immersive-vr'), check('immersive-ar')]);
-
 	if (xrSupport.vr || xrSupport.ar) {
 		els.enterVr.disabled = false;
-		setStatus('ok', 'VR ready');
 		viewerModule ??= import('./viewer.js'); // warm up so entering VR is instant
-	} else {
-		setStatus('idle', 'No VR headset detected');
 	}
+	showXrStatus();
+}
+
+function showXrStatus() {
+	if (!navigator.xr) setStatus('idle', window.isSecureContext ? 'WebXR not available' : 'VR requires HTTPS');
+	else if (xrSupport.vr || xrSupport.ar) setStatus('ok', 'VR ready');
+	else setStatus('idle', 'No VR headset detected');
 }
 
 async function enterVR() {
@@ -472,6 +545,12 @@ async function init() {
 	els.modal.addEventListener('click', (event) => {
 		if (event.target === els.modal) els.modal.close();
 	});
+	els.openGlobe.addEventListener('click', openGlobeModal);
+	els.globeClose.addEventListener('click', () => els.globeModal.close());
+	els.globeModal.addEventListener('click', (event) => {
+		if (event.target === els.globeModal) els.globeModal.close();
+	});
+	els.globeModal.addEventListener('close', closeGlobeView);
 
 	els.vr.addEventListener('exitvrrequest', exitVR);
 	els.vr.addEventListener('panoramachange', (event) => {
