@@ -33,6 +33,22 @@ export function angularDistance(a, b) {
 	return 2 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+const EARTH_RADIUS = 6371008.8; // m, mean
+
+export function distanceMeters(a, b) {
+	return angularDistance(a, b) * EARTH_RADIUS;
+}
+
+// Initial great-circle bearing from a to b, in degrees clockwise from north (0–360).
+export function bearing(a, b) {
+	const lat1 = a.lat * DEG;
+	const lat2 = b.lat * DEG;
+	const dLon = (b.lon - a.lon) * DEG;
+	const y = Math.sin(dLon) * Math.cos(lat2);
+	const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+	return ((Math.atan2(y, x) / DEG) + 360) % 360;
+}
+
 // Coordinates of a gallery / library item, or null when it has none (or they are invalid).
 export function itemCoordinates(item) {
 	const lat = Number(item?.lat);

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Globe } from './vr/globe.js';
+import { itemCoordinates } from './vr/geo.js';
 import { PreviewOrb } from './vr/preview-orb.js';
 
 // Desktop map: the shared globe in the map dialog, with mouse / touch / keyboard controls.
@@ -12,6 +13,7 @@ const ORB_PIXELS = 46; // preview orb radius on screen
 const ORB_LIFT = 70; // px between the pin and the orb centre
 const DRAG_THRESHOLD = 5; // px before a press on a pin becomes a drag
 const KEY_ROTATE = 8; // degrees per key press at altitude 1
+const FOCUS_ALTITUDE = 0.3; // zoom when going to a photo (about a region), unless already closer
 
 function makeHaloTexture() {
 	const size = 256;
@@ -35,7 +37,7 @@ export class GlobeView {
 	 * @param stage        element the canvas goes into
 	 * @param card         { root, title, description, count, action } elements of the photo card
 	 * @param attribution  element showing the tile attribution
-	 * @param zoom         { in, out } zoom buttons
+	 * @param zoom         { in, out, locate } map buttons
 	 * @param onOpen       (path) => void, opens a photo
 	 */
 	constructor({ stage, card, attribution, zoom, items, current, config = {}, resolveUrl, onOpen }) {
@@ -85,6 +87,7 @@ export class GlobeView {
 
 		this.resize();
 		this.globe.restoreView(current);
+		this.updateLocate();
 		this.attribution.textContent = config.globeTileAttribution || '';
 
 		this.bindEvents();
@@ -117,6 +120,26 @@ export class GlobeView {
 
 	setItems(items, current) {
 		this.globe.setItems(items, current);
+		this.updateLocate();
+	}
+
+	updateLocate() {
+		this.zoom.locate.disabled = !this.coordinatesOf(this.globe.current);
+	}
+
+	coordinatesOf(path) {
+		return itemCoordinates(this.globe.items.find((entry) => entry.item.path === path)?.item);
+	}
+
+	// Flies to a photo and previews its pin, as if it had been tapped.
+	async focus(path) {
+		const coordinates = this.coordinatesOf(path);
+		if (!coordinates) return;
+		this.selected = null;
+		await this.globe.flyTo({ ...coordinates, altitude: Math.min(this.globe.view.altitude, FOCUS_ALTITUDE) });
+		if (this.destroyed) return;
+		this.globe.update(0, { viewer: this.camera.position, pixelsPerRadian: this.pixelsPerRadian, pinPixels: PIN_PIXELS });
+		this.selected = this.globe.clusters.find((cluster) => cluster.items.some((item) => item.path === path)) ?? null;
 	}
 
 	// --- Input -------------------------------------------------------------
@@ -134,6 +157,7 @@ export class GlobeView {
 			[this.stage.closest('dialog') || this.stage, 'keydown', (event) => this.onKeyDown(event)],
 			[this.zoom.in, 'click', () => this.globe.flyTo({ altitude: this.globe.view.altitude * 0.5 }, 0.35)],
 			[this.zoom.out, 'click', () => this.globe.flyTo({ altitude: this.globe.view.altitude * 2 }, 0.35)],
+			[this.zoom.locate, 'click', () => this.focus(this.globe.current)],
 		];
 		for (const [target, type, listener, options] of this.listeners) target.addEventListener(type, listener, options);
 		this.resizeObserver = new ResizeObserver(() => this.resize());

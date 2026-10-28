@@ -197,6 +197,23 @@ body.in-vr .nav-arrow {
 	-webkit-backdrop-filter: blur(12px);
 }
 
+.btn-icon {
+	padding: 0 9px;
+}
+
+/* On / off button: the icon is crossed out and dimmed while off. */
+.btn-toggle .toggle-off {
+	display: none;
+}
+
+.btn-toggle[aria-pressed="false"] {
+	color: var(--muted);
+}
+
+.btn-toggle[aria-pressed="false"] .toggle-off {
+	display: inline;
+}
+
 .btn-ghost:hover {
 	background: var(--surface-hover);
 	border-color: var(--border-strong);
@@ -522,7 +539,7 @@ body.in-vr .nav-arrow {
 	-webkit-line-clamp: 2;
 }
 
-.card-remove {
+.card-action {
 	position: absolute;
 	top: 8px;
 	right: 8px;
@@ -541,13 +558,17 @@ body.in-vr .nav-arrow {
 	transition: opacity 0.15s ease, background-color 0.15s ease;
 }
 
-.card-remove svg {
+.card-action svg {
 	width: 14px;
 	height: 14px;
 }
 
-.gallery-card:hover .card-remove,
-.gallery-card:focus-within .card-remove {
+.gallery-card:has(.card-remove) .card-map {
+	right: 42px;
+}
+
+.gallery-card:hover .card-action,
+.gallery-card:focus-within .card-action {
 	opacity: 1;
 }
 
@@ -556,14 +577,20 @@ body.in-vr .nav-arrow {
 	border-color: transparent;
 }
 
-.card-remove:focus-visible {
+.card-map:hover {
+	background: var(--accent);
+	border-color: transparent;
+	color: var(--on-accent);
+}
+
+.card-action:focus-visible {
 	opacity: 1;
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
 
 @media (hover: none) {
-	.card-remove {
+	.card-action {
 		opacity: 1;
 	}
 }
@@ -616,6 +643,105 @@ body.in-vr .nav-arrow {
 	padding: 32px 0;
 	color: var(--muted);
 	text-align: center;
+}
+
+/* --- Nearby-photo markers in the panorama ------------------------------- */
+
+.hotspots {
+	position: absolute;
+	inset: 0;
+	z-index: 30; /* over the panorama, under the viewer's controls */
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.hotspot {
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: -10px 0 0 -10px; /* the dot's centre sits on the point */
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--text);
+	font: inherit;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.hotspot-dot {
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	border: 3px solid #fff;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 0 3px rgba(5, 10, 15, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+	transition: transform 0.15s ease;
+}
+
+.hotspot-label {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	max-width: 220px;
+	padding: 4px 10px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface);
+	font-size: 12.5px;
+	white-space: nowrap;
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	transition: background-color 0.15s ease;
+}
+
+.hotspot-label strong {
+	overflow: hidden;
+	font-weight: 600;
+	text-overflow: ellipsis;
+}
+
+.hotspot-label span {
+	flex-shrink: 0;
+	color: var(--muted);
+}
+
+.hotspot:hover .hotspot-dot,
+.hotspot:focus-visible .hotspot-dot {
+	transform: scale(1.3);
+}
+
+.hotspot:hover .hotspot-label,
+.hotspot:focus-visible .hotspot-label {
+	background: var(--surface-hover);
+}
+
+.hotspot:focus-visible {
+	outline: none;
+}
+
+.hd-progress {
+	position: fixed;
+	left: 16px;
+	bottom: 20px;
+	z-index: 15;
+	padding: 6px 12px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+}
+
+body.in-vr .hd-progress {
+	display: none;
 }
 
 /* --- Map dialog -------------------------------------------------------- */
@@ -738,6 +864,11 @@ body.in-vr .nav-arrow {
 
 .globe-zoom .icon-btn {
 	color: var(--text);
+}
+
+.globe-zoom .icon-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
 }
 
 .globe-attribution {

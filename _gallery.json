@@ -7,8 +7,10 @@
     "preview": "./thumb/DJI_0423.preview.webp",
     "description": "The default panoramic image.",
     "default": true,
-    "lat": 50.087451,
-    "lon": 14.420671
+    "lat": 60.087451,
+    "lon": 44.420671,
+    "heading": 324.3,
+    "height": 120.4
   },
   {
     "id": "dji_0081",

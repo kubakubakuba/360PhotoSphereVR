@@ -23,6 +23,7 @@ const TYPES = {
  * @param {Object<string,string>} mounts  URL prefix (ending in /) -> directory, or exact URL path -> file
  */
 export async function startServer({ root, mounts = {} }) {
+	const delays = new Map(); // URL prefix -> ms, see setDelay()
 	const server = createServer(async (req, res) => {
 		let pathname;
 		try {
@@ -30,6 +31,9 @@ export async function startServer({ root, mounts = {} }) {
 		} catch {
 			res.writeHead(400).end();
 			return;
+		}
+		for (const [prefix, ms] of delays) {
+			if (pathname.startsWith(prefix)) await new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 		}
 
 		let base = resolve(root);
@@ -68,6 +72,11 @@ export async function startServer({ root, mounts = {} }) {
 	const { port } = server.address();
 	return {
 		url: `http://127.0.0.1:${port}/`,
+		// Slows down responses under a URL prefix (0 removes the delay), e.g. to watch a preview stage.
+		setDelay(prefix, ms) {
+			if (ms > 0) delays.set(prefix, ms);
+			else delays.delete(prefix);
+		},
 		close: () => new Promise((resolveClose) => {
 			server.closeAllConnections();
 			server.close(resolveClose);

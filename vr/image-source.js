@@ -19,12 +19,25 @@ function rememberBlob(url, promise) {
 	promise.catch(() => blobCache.delete(url));
 }
 
-async function downloadBlob(url, onProgress) {
+// Panoramas published with listgenerator.py --seal (.pano): a header and the image XOR-ed with
+// a keystream, so the file saved from its URL is not a viewable image. Must match publish.py.
+const SEAL_MAGIC = [0x50, 0x41, 0x4e, 0x4f, 0x53, 0x45, 0x41, 0x4c]; // "PANOSEAL"
+const SEAL_KEY = Uint8Array.from({ length: 256 }, (_, i) => (i * 167 + 13) & 0xff);
+
+export async function unseal(blob) {
+	const head = new Uint8Array(await blob.slice(0, SEAL_MAGIC.length).arrayBuffer());
+	if (head.length < SEAL_MAGIC.length || SEAL_MAGIC.some((byte, i) => head[i] !== byte)) return blob;
+	const bytes = new Uint8Array(await blob.slice(SEAL_MAGIC.length).arrayBuffer());
+	for (let i = 0; i < bytes.length; i++) bytes[i] ^= SEAL_KEY[i & 0xff];
+	return new Blob([bytes]); // the decoders sniff the image type
+}
+
+export async function downloadBlob(url, onProgress) {
 	const response = await fetch(url);
 	if (!response.ok) throw new Error(`HTTP ${response.status} while loading ${url}`);
 
 	const total = Number(response.headers.get('content-length')) || 0;
-	if (!response.body || !total || !onProgress) return response.blob();
+	if (!response.body || !total || !onProgress) return unseal(await response.blob());
 
 	const reader = response.body.getReader();
 	const chunks = [];
@@ -36,7 +49,7 @@ async function downloadBlob(url, onProgress) {
 		loaded += value.length;
 		onProgress(Math.min(loaded / total, 1));
 	}
-	return new Blob(chunks, { type: response.headers.get('content-type') || '' });
+	return unseal(new Blob(chunks, { type: response.headers.get('content-type') || '' }));
 }
 
 export async function fetchBlob(url, onProgress) {
@@ -49,6 +62,16 @@ export async function fetchBlob(url, onProgress) {
 	const promise = downloadBlob(url, onProgress);
 	rememberBlob(url, promise);
 	return promise;
+}
+
+// Small 2:1 image of the whole panorama (thumbs.py --previews, or a local photo's thumbnail), or null.
+export function previewUrl(item) {
+	return item?.preview || (item?.local && item.thumbnail) || null;
+}
+
+// A preview (or any panorama) decoded small, flipped like decodePanorama.
+export async function fetchPreviewBitmap(url, maxSize = 1024) {
+	return decodePanorama(await downloadBlob(url), { maxSize });
 }
 
 export function prefetch(url) {

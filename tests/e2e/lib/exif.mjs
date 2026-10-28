@@ -45,6 +45,14 @@ export function exifSegment(lat, lon, { littleEndian = true } = {}) {
 	return Buffer.concat([header, tiff]);
 }
 
+/** APP1 XMP segment (marker included), e.g. DJI's drone-dji:* flight data. */
+export function xmpSegment(xml) {
+	const body = Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'latin1'), Buffer.from(xml, 'utf8')]);
+	const header = Buffer.from([0xff, 0xe1, 0, 0]);
+	header.writeUInt16BE(2 + body.length, 2);
+	return Buffer.concat([header, body]);
+}
+
 /** Copy of a JPEG with a GPS EXIF segment right after the start-of-image marker. */
 export function withGps(jpeg, lat, lon, options) {
 	return Buffer.concat([jpeg.subarray(0, 2), exifSegment(lat, lon, options), jpeg.subarray(2)]);

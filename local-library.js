@@ -3,7 +3,7 @@
 // IndexedDB is unavailable, e.g. in some private browsing modes.
 
 import { readImageSize, isPanoramaSize } from './vr/image-size.js';
-import { readGps } from './vr/exif-gps.js';
+import { readPhotoMetadata } from './vr/exif-gps.js';
 
 const DB_NAME = 'panorama-library';
 const DB_VERSION = 1;
@@ -98,8 +98,8 @@ export class LocalLibrary {
 			this.persistent = true;
 			const records = await request(this.db.transaction(STORE).objectStore(STORE).getAll());
 			records.forEach((record) => this.remember(record));
-			await this.fillGps(records.filter((record) => record.gps === undefined))
-				.catch((error) => console.warn('Local library: could not read GPS positions:', error));
+			await this.fillPlaces(records.filter((record) => record.place === undefined))
+				.catch((error) => console.warn('Local library: could not read photo positions:', error));
 		} catch (error) {
 			console.warn('Local library: falling back to session-only storage:', error);
 			this.db = null;
@@ -107,16 +107,16 @@ export class LocalLibrary {
 		}
 	}
 
-	// Photos stored before GPS positions were read get them now (null = checked, has none).
-	async fillGps(records) {
+	// Photos stored before positions were read get them now (null = checked, has none).
+	async fillPlaces(records) {
 		if (records.length === 0) return;
-		for (const record of records) record.gps = await readGps(record.blob).catch(() => null);
+		for (const record of records) record.place = await readPhotoMetadata(record.blob).catch(() => null);
 		const tx = this.db.transaction(STORE, 'readwrite');
 		records.forEach((record) => tx.objectStore(STORE).put(record));
 		await new Promise((resolve) => {
 			tx.oncomplete = resolve;
 			tx.onerror = tx.onabort = () => {
-				console.warn('Local library: could not save GPS positions:', tx.error);
+				console.warn('Local library: could not save photo positions:', tx.error);
 				resolve();
 			};
 		});
@@ -145,7 +145,7 @@ export class LocalLibrary {
 					thumbnail: this.urls.get(record.id)?.thumb || '',
 					description: details.join(' · '),
 					local: true,
-					...(record.gps ? { lat: record.gps.lat, lon: record.gps.lon } : {}),
+					...pick(record.place, ['lat', 'lon', 'heading', 'height']),
 				};
 			});
 	}
@@ -176,7 +176,7 @@ export class LocalLibrary {
 			}
 			try {
 				const { thumb, width, height } = await createThumbnail(file);
-				const gps = await readGps(file).catch(() => null);
+				const place = await readPhotoMetadata(file).catch(() => null); // GPS, drone heading / height
 				const record = {
 					id: newId(),
 					name: stripExtension(file.name),
@@ -187,7 +187,7 @@ export class LocalLibrary {
 					added: Date.now(),
 					blob: file,
 					thumb,
-					gps,
+					place,
 				};
 				if (this.db) {
 					const tx = this.db.transaction(STORE, 'readwrite');
@@ -221,6 +221,10 @@ export class LocalLibrary {
 		this.urls.delete(id);
 		this.records.delete(id);
 	}
+}
+
+function pick(source, keys) {
+	return Object.fromEntries(keys.filter((key) => source?.[key] !== undefined).map((key) => [key, source[key]]));
 }
 
 function stripExtension(name) {

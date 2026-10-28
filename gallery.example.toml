@@ -1,0 +1,42 @@
+# Copy to gallery.toml (picked up automatically) or pass it with --config.
+# listgenerator.py compiles it, together with the photos, into gallery.json.
+# Relative paths are resolved against this file's directory.
+
+# Optional: serve copies of the panoramas instead of the originals.
+# Without this section, gallery.json points at the photos in the images directory.
+[publish]
+dir = "imgs"         # the copies are written here (keep the originals elsewhere); this folder is what
+                     # gets served as imgs/ (Docker: IMAGES_DIR, GitHub Pages: the imgs/ folder in the zip)
+seal = true          # scrambled .pano files: the file saved from its URL is not a viewable image
+max_size = 8192      # maximum width in px, 0 = keep (8192 is about what a Quest 3 shows)
+quality = 92         # JPEG quality when a copy has to be re-encoded
+
+# Written into the EXIF of every published copy.
+[exif]
+artist = "Your Name"
+copyright = "© 2026 Your Name, all rights reserved"
+
+# A round badge at the nadir (straight down, where the tripod or drone shadow is).
+# Remove the section for none.
+[nadir]
+text = ""                   # empty = the copyright above; "\n" for more lines
+logo = ""                   # optional image (PNG with transparency) drawn above the text
+font = ""                   # optional TrueType font file, default = Pillow's built-in font
+radius = 18                 # size in degrees around the nadir
+color = "#ffffff"
+background = "#000000c0"    # #rrggbbaa
+
+# One entry per photo that needs more than the defaults ("Panorama <file name>").
+[[img]]
+file = "DJI_0423.JPG"
+name = "Norway 1"
+desc = "Norway scenery 1"
+default = true              # shown first
+
+[[img]]
+file = "DJI_0083.JPG"
+name = "Banff"
+desc = "Canada - Banff"
+# lat / lon / heading / height override what is read from the photo
+# lat = 51.1784
+# lon = -115.5708

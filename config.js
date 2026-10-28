@@ -15,4 +15,6 @@ window.APP_CONFIG = {
 	globeTileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
 	globeTileAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
 	globeTileMaxZoom: 17,
+	hotspots: true, // markers in the panorama pointing at nearby photos (needs a position and heading)
+	hotspotMaxDistance: 5000, // m
 };

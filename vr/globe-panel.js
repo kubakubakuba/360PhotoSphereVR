@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Globe } from './globe.js';
 import { PreviewOrb } from './preview-orb.js';
 import { TextLabel } from './text-label.js';
+import { itemCoordinates } from './geo.js';
 
 // The globe in VR: floats where the photo orb normally is, with a preview orb above the
 // pointed-at pin and Gallery / zoom buttons below. Lives in the viewer's follow rig.
@@ -21,6 +22,7 @@ const PREVIEW_LINGER = 0.4; // s the preview stays after the ray leaves its pin
 const STICK_DEADZONE = 0.15;
 const STICK_ROTATE = 45; // degrees per second at altitude 1
 const STICK_ZOOM = 1.6;
+const FOCUS_ALTITUDE = 0.3; // going to the current photo zooms to about a region
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const COLORS = {
@@ -124,8 +126,24 @@ export class VRGlobePanel {
 			}
 			ctx.stroke();
 		});
+		const locate = makeButtonTexture(128, 128, (ctx) => {
+			ctx.lineWidth = 7;
+			ctx.beginPath();
+			ctx.arc(64, 64, 26, 0, Math.PI * 2);
+			for (const [x1, y1, x2, y2] of [[64, 24, 64, 38], [64, 90, 64, 104], [24, 64, 38, 64], [90, 64, 104, 64]]) {
+				ctx.moveTo(x1, y1);
+				ctx.lineTo(x2, y2);
+			}
+			ctx.stroke();
+			ctx.fillStyle = accent;
+			ctx.beginPath();
+			ctx.arc(64, 64, 10, 0, Math.PI * 2);
+			ctx.fill();
+		});
+		this.locateButton = button(locate, 0.045, 0.045, 0.01, () => this.locate());
 		this.buttons = [
 			button(back, 0.15, 0.045, -0.12, () => this.onBack?.()),
+			this.locateButton,
 			button(zoom(false), 0.045, 0.045, 0.07, () => this.zoom(2)),
 			button(zoom(true), 0.045, 0.045, 0.13, () => this.zoom(0.5)),
 		];
@@ -200,7 +218,7 @@ export class VRGlobePanel {
 
 	getInteractives() {
 		if (!this.panel.visible || this.alpha < 0.6 || !this.globe) return [];
-		return [...this.globe.visiblePins, this.globe.earth, ...this.buttons];
+		return [...this.globe.visiblePins, this.globe.earth, ...this.buttons.filter((button) => button.userData.enabled !== false)];
 	}
 
 	// Pins of several photos zoom in until they split; otherwise open the previewed photo.
@@ -209,6 +227,12 @@ export class VRGlobePanel {
 		if (!target) return;
 		const item = (this.previewCluster === target && this.orb.item) || target.items[0];
 		this.onSelect?.(item.path);
+	}
+
+	// Flies to the photo being viewed.
+	locate() {
+		const coordinates = itemCoordinates(this.items.find((item) => item.path === this.current));
+		if (coordinates && this.globe) this.globe.flyTo({ ...coordinates, altitude: Math.min(this.globe.view.altitude, FOCUS_ALTITUDE) });
 	}
 
 	zoom(factor) {
@@ -240,11 +264,12 @@ export class VRGlobePanel {
 		this.updatePreview(dt, viewer);
 
 		const hoverEase = 1 - Math.exp(-dt * 18);
+		this.locateButton.userData.enabled = !!itemCoordinates(this.items.find((item) => item.path === this.current));
 		for (const button of this.buttons) {
 			const data = button.userData;
 			data.hoverT += ((data.hover > 0 ? 1 : 0) - data.hoverT) * hoverEase;
 			button.scale.setScalar(1 + 0.1 * data.hoverT);
-			button.material.opacity = this.alpha * (0.85 + 0.15 * data.hoverT);
+			button.material.opacity = this.alpha * (data.enabled === false ? 0.3 : 0.85 + 0.15 * data.hoverT);
 		}
 		this.hint.setOpacity(this.alpha * 0.9);
 		this.attribution.setOpacity(globe.tiles.visibleCount > 0 ? this.alpha * 0.8 : 0);

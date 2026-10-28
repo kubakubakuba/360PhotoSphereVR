@@ -59,13 +59,16 @@ function fileName(path) {
 
 export class VRGallery {
 	// onGlobe: opens the globe; without it there is no Globe button
-	constructor({ items = [], accent = '#43cea2', placeholder = 'placeholder_thumbnail.png', onSelect, onExit, onGlobe }) {
+	// onMarkers: toggles the markers to nearby photos (markersOn: their state); without it there is no Markers button
+	constructor({ items = [], accent = '#43cea2', placeholder = 'placeholder_thumbnail.png', onSelect, onExit, onGlobe, onMarkers, markersOn = true }) {
 		this.items = items;
 		this.accent = accent;
 		this.placeholder = placeholder;
 		this.onSelect = onSelect;
 		this.onExit = onExit;
 		this.onGlobe = onGlobe;
+		this.onMarkers = onMarkers;
+		this.markersOn = markersOn;
 
 		this.panel = new THREE.Group();
 		this.panel.visible = false;
@@ -154,6 +157,17 @@ export class VRGallery {
 			this.buttons.push(this.globeButton);
 		}
 
+		if (this.onMarkers) {
+			this.markersCanvas = makeCanvas(384, 116);
+			this.markersButton = button(makeTexture(this.markersCanvas.canvas), 0.15, 0.045, () => this.onMarkers());
+			this.drawMarkersButton();
+			// Under the Globe button, or in its place
+			const y = this.onGlobe ? footerY - 0.06 : footerY;
+			this.markersButton.position.set(-DISTANCE * Math.sin(sideTheta), y, DISTANCE * (1 - Math.cos(sideTheta)));
+			this.markersButton.rotation.y = sideTheta;
+			this.buttons.push(this.markersButton);
+		}
+
 		this.pager = makeCanvas(512, 64);
 		this.pagerTexture = makeTexture(this.pager.canvas);
 		this.pagerMesh = new THREE.Mesh(
@@ -237,6 +251,49 @@ export class VRGallery {
 		ctx.textBaseline = 'middle';
 		ctx.fillText('Globe', 156, 60);
 		return makeTexture(canvas);
+	}
+
+	setMarkersOn(on) {
+		this.markersOn = on;
+		if (this.markersButton) this.drawMarkersButton();
+	}
+
+	// "Markers" with a pin icon, and a switch that shows whether they are on.
+	drawMarkersButton() {
+		const { canvas, ctx } = this.markersCanvas;
+		const on = this.markersOn;
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.fillStyle = COLORS.surfaceAlt;
+		ctx.strokeStyle = COLORS.border;
+		ctx.lineWidth = 4;
+		ctx.beginPath();
+		ctx.roundRect(2, 2, 380, 112, 56);
+		ctx.fill();
+		ctx.stroke();
+		ctx.fillStyle = on ? this.accent : COLORS.muted;
+		ctx.beginPath();
+		ctx.arc(66, 50, 18, Math.PI * 0.85, Math.PI * 0.15);
+		ctx.lineTo(66, 86);
+		ctx.closePath();
+		ctx.fill();
+		ctx.fillStyle = COLORS.surfaceAlt;
+		ctx.beginPath();
+		ctx.arc(66, 50, 7, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.fillStyle = on ? COLORS.text : COLORS.muted;
+		ctx.font = `600 40px ${FONT}`;
+		ctx.textBaseline = 'middle';
+		ctx.fillText('Markers', 98, 60);
+		// Switch
+		ctx.fillStyle = on ? this.accent : 'rgba(255, 255, 255, 0.18)';
+		ctx.beginPath();
+		ctx.roundRect(270, 38, 84, 42, 21);
+		ctx.fill();
+		ctx.fillStyle = '#ffffff';
+		ctx.beginPath();
+		ctx.arc(on ? 333 : 291, 59, 16, 0, Math.PI * 2);
+		ctx.fill();
+		this.markersButton.material.map.needsUpdate = true;
 	}
 
 	drawPager() {

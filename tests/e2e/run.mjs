@@ -20,6 +20,7 @@ import desktop from './specs/desktop.mjs';
 import localLibrary from './specs/local-library.mjs';
 import imageSource from './specs/image-source.mjs';
 import globe from './specs/globe.mjs';
+import hotspots from './specs/hotspots.mjs';
 import { vrSpec } from './specs/vr.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ const headed = args.includes('--headed');
 const large = args.includes('--large');
 const filters = args.filter((arg) => !arg.startsWith('--'));
 
-const ALL_SPECS = [desktop, localLibrary, imageSource, globe, vrSpec({ layers: false }), vrSpec({ layers: true })];
+const ALL_SPECS = [desktop, localLibrary, imageSource, globe, hotspots, vrSpec({ layers: false }), vrSpec({ layers: true })];
 const specs = ALL_SPECS.filter((spec) => filters.length === 0 || filters.some((filter) => spec.name.includes(filter)));
 
 // Merges `overrides` into whatever config.js assigns to window.APP_CONFIG.

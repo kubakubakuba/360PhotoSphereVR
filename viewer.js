@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import { VRGallery } from './vr/gallery.js';
 import { VRGlobePanel } from './vr/globe-panel.js';
+import { HotspotMarkers } from './vr/hotspot-markers.js';
+import { hasHotspots, hotspotsVisible, setHotspotsVisible } from './vr/hotspots.js';
 import { itemCoordinates } from './vr/geo.js';
 import { LoadingRing } from './vr/loading-ring.js';
 import { Animator, PhotoSphere, DIM_OPACITY, R_ORB, easeOutCubic } from './vr/transitions.js';
 import { TextLabel } from './vr/text-label.js';
 import { EquirectLayer } from './vr/equirect-layer.js';
-import { fetchBlob, prefetch, decodePanorama, createPanoramaTexture, streamToTexture } from './vr/image-source.js';
+import {
+	fetchBlob, prefetch, decodePanorama, createPanoramaTexture, streamToTexture, previewUrl, fetchPreviewBitmap,
+} from './vr/image-source.js';
 
 const ACCENT = '#43cea2';
 const ORB_OFFSET = new THREE.Vector3(0, 0.06, -1.1); // relative to the head, in the follow rig
@@ -24,6 +28,9 @@ const LAYER_HANDOFF_FRAMES = 10; // frames the mesh stays visible after the laye
 const AXIS_ON = 0.7;
 const AXIS_OFF = 0.3;
 const MENU_BUTTON = 5; // B / Y on xr-standard (Quest Touch) controllers
+const MARKERS_BUTTON = 4; // A / X
+const PREVIEW_SIZE = 1024; // the orb's preview while the full photo loads
+const RING_AROUND_ORB = 1.15; // ring radius relative to the orb while a preview is shown
 
 function wrapAngle(angle) {
 	return Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -162,12 +169,15 @@ export class Viewer {
 		this.orbAnchor.add(this.nameLabel);
 
 		this.hasGlobe = this.config.globe !== false && this.items.some((item) => itemCoordinates(item));
+		this.hasHotspots = this.config.hotspots !== false && hasHotspots(this.items);
 		this.gallery = new VRGallery({
 			items: this.items,
 			accent: ACCENT,
 			onSelect: (path) => this.selectPanorama(path),
 			onExit: () => this.requestExitVR(),
 			onGlobe: this.hasGlobe ? () => this.runWhenIdle('globe', () => this.openGlobe()) : undefined,
+			onMarkers: this.hasHotspots ? () => this.toggleHotspots() : undefined,
+			markersOn: hotspotsVisible(),
 		});
 		this.globePanel = new VRGlobePanel({
 			items: this.items,
@@ -182,6 +192,13 @@ export class Viewer {
 		this.gallery.panel.rotation.x = -Math.atan2(-PANEL_OFFSET.y, -PANEL_OFFSET.z);
 		this.rig.add(this.gallery.panel, this.globePanel.panel);
 		this.scene.add(this.rig);
+
+		this.hotspots = new HotspotMarkers({
+			accent: ACCENT,
+			maxDistance: Number(this.config.hotspotMaxDistance) || 5000,
+			onSelect: (path) => this.selectPanorama(path),
+		});
+		this.scene.add(this.hotspots);
 
 		this.hud = createHudButton();
 		this.hud.userData = { hover: 0, onActivate: () => this.openGallery() };
@@ -310,6 +327,9 @@ export class Viewer {
 			this.followRig(dt);
 			this.gallery.update(dt);
 			this.globePanel.update(dt, this.head.position);
+			// Markers to nearby photos while a photo surrounds the user.
+			const immersed = this.sphere.k <= 0 && !this.busy && !this.gallery.visible && !this.globePanel.visible;
+			this.hotspots.update(dt, this.head.position, immersed && hotspotsVisible());
 			this.updateHud(dt);
 			this.updatePointers();
 			this.updateScene(dt);
@@ -398,6 +418,13 @@ export class Viewer {
 			if (menuDown && !pointer.menuDown) this.toggleGallery();
 			pointer.menuDown = menuDown;
 
+			const markersDown = !!gamepad.buttons[MARKERS_BUTTON]?.pressed;
+			if (markersDown && !pointer.markersDown && this.hasHotspots) {
+				this.toggleHotspots();
+				this.pulse(pointer, 0.3, 25);
+			}
+			pointer.markersDown = markersDown;
+
 			const x = gamepad.axes[2] ?? 0;
 			if (this.globePanel.visible) {
 				// Held, not flicked: turns and zooms the globe.
@@ -414,6 +441,12 @@ export class Viewer {
 		}
 	}
 
+	// Shared with the desktop viewer (see vr/hotspots.js).
+	toggleHotspots() {
+		setHotspotsVisible(!hotspotsVisible());
+		this.gallery.setMarkersOn(hotspotsVisible());
+	}
+
 	onStick(pointer, direction) {
 		this.dismissHint();
 		if (this.globePanel.visible) return;
@@ -425,7 +458,7 @@ export class Viewer {
 	}
 
 	getInteractives() {
-		const targets = [...this.gallery.getInteractives(), ...this.globePanel.getInteractives()];
+		const targets = [...this.gallery.getInteractives(), ...this.globePanel.getInteractives(), ...this.hotspots.getInteractives()];
 		if (this.hud.visible && this.hudAlpha > 0.6) targets.push(this.hud);
 		return targets;
 	}
@@ -548,6 +581,7 @@ export class Viewer {
 		this.gallery.setCurrent(path);
 		this.globePanel.setCurrent(path);
 		const item = this.items.find((entry) => entry.path === path);
+		if (this.config.hotspots !== false) this.hotspots?.show(item, this.items);
 		this.nameLabel.setText(item?.name || (path ? decodeURIComponent(path.split('/').pop()) : ''));
 	}
 
@@ -566,6 +600,7 @@ export class Viewer {
 			: [
 				{ text: 'B / Y', style: 'accent' }, '  Gallery', separator,
 				{ text: 'Stick ◀ ▶', style: 'accent' }, '  Next photo', separator,
+				...(this.hasHotspots ? [{ text: 'A / X', style: 'accent' }, '  Markers', separator] : []),
 				{ text: 'Trigger', style: 'accent' }, '  Select',
 			]);
 
@@ -676,6 +711,9 @@ export class Viewer {
 		let releaseGpu;
 		const gpuReady = new Promise((resolve) => { releaseGpu = resolve; });
 
+		const preview = this.loadPreview(path);
+		let previewShown = false;
+
 		try {
 			const loading = this.loadPanorama(path, gpuReady);
 			loading.catch(() => {}); // handled below, after the collapse animation
@@ -700,8 +738,18 @@ export class Viewer {
 
 			let texture;
 			try {
-				[texture] = await Promise.all([loading, this.animator.wait(400)]);
+				// A preview that arrives before the full photo fills the orb meanwhile.
+				const previewFirst = await Promise.race([loading.then(() => false, () => false), preview.then((t) => !!t)]);
+				if (previewFirst && !this.destroyed) {
+					previewShown = true;
+					await this.showPreview(path, await preview);
+				}
+				[texture] = await Promise.all([loading, this.animator.wait(previewShown ? 0 : 400)]);
 			} catch (error) {
+				if (previewShown) {
+					sphere.setTexture(null);
+					sphere.orbScale = 0;
+				}
 				if (!this.destroyed) await this.recoverFromLoadError(path, error);
 				return;
 			}
@@ -711,7 +759,7 @@ export class Viewer {
 			}
 			await this.animator.wait(180); // let the completed ring flash
 
-			sphere.setTexture(texture);
+			sphere.setTexture(texture); // replaces the preview
 			if (this.layer) {
 				try {
 					this.layer.setImage(texture);
@@ -724,15 +772,29 @@ export class Viewer {
 			this.setCurrentPhoto(path);
 			this.container.dispatchEvent(new CustomEvent('panoramachange', { bubbles: true, detail: { path } }));
 
-			// ...and the new orb grows out of it.
-			await this.animator.tween({
-				duration: 480,
-				ease: easeOutCubic,
-				update: (p) => {
-					sphere.orbScale = p;
-					ring.setLeave(p);
-				},
-			});
+			if (previewShown) {
+				// The orb is already there: the ring around it fades out.
+				const scale = ring.scale.x;
+				await this.animator.tween({
+					duration: 400,
+					update: (p) => {
+						ring.opacity = 1 - p;
+						ring.scale.setScalar(scale * (1 + 0.25 * p));
+						ring.visible = p < 0.999;
+						ring.applyOpacity();
+					},
+				});
+			} else {
+				// ...and the new orb grows out of it.
+				await this.animator.tween({
+					duration: 480,
+					ease: easeOutCubic,
+					update: (p) => {
+						sphere.orbScale = p;
+						ring.setLeave(p);
+					},
+				});
+			}
 
 			if (!this.gallery.visible) await this.expand();
 			this.prefetchNeighbours();
@@ -740,8 +802,48 @@ export class Viewer {
 			console.error('Error while switching panorama:', error);
 		} finally {
 			releaseGpu();
+			if (!previewShown) preview.then((texture) => texture?.dispose());
 			this.endBusy();
 		}
+	}
+
+	// Small texture of the whole panorama for the orb, or null (no preview, or it failed).
+	loadPreview(path) {
+		const url = previewUrl(this.items.find((item) => item.path === path));
+		if (!url) return Promise.resolve(null);
+		return fetchPreviewBitmap(url, PREVIEW_SIZE).then((bitmap) => {
+			if (this.destroyed) {
+				bitmap.close();
+				return null;
+			}
+			const texture = new THREE.Texture(bitmap);
+			texture.flipY = false; // flipped while decoding, like the full photo
+			texture.colorSpace = THREE.NoColorSpace; // PhotoSphere decodes sRGB itself
+			texture.needsUpdate = true;
+			texture.addEventListener('dispose', () => bitmap.close());
+			return texture;
+		}).catch((error) => {
+			console.warn(`Could not load the preview of ${path}:`, error);
+			return null;
+		});
+	}
+
+	// The orb grows out of the ring showing the preview; the ring moves around it and keeps
+	// showing the full photo's progress.
+	async showPreview(path, texture) {
+		const sphere = this.sphere;
+		const ring = this.loadingRing;
+		sphere.setTexture(texture);
+		this.nameLabel.setText(this.items.find((item) => item.path === path)?.name || decodeURIComponent(path.split('/').pop()));
+		const ringScale = (R_ORB * RING_AROUND_ORB) / ring.radius;
+		await this.animator.tween({
+			duration: 480,
+			ease: easeOutCubic,
+			update: (p) => {
+				sphere.orbScale = p;
+				ring.scale.setScalar(1 + (ringScale - 1) * p);
+			},
+		});
 	}
 
 	releasePhoto() {
@@ -927,6 +1029,7 @@ export class Viewer {
 		this.sphere.dispose();
 		this.gallery.dispose();
 		this.globePanel.dispose();
+		this.hotspots.dispose();
 		this.loadingRing.dispose();
 		this.scene.traverse((object) => {
 			object.geometry?.dispose();

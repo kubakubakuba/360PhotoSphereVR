@@ -31,8 +31,11 @@ export async function waitForDark(page, { at = [0.5, 0.5], timeout = 10000 } = {
 
 export const currentHash = (page) => page.evaluate(() => decodeURIComponent(location.hash));
 
+// The photo in the link (the view after it, &yaw=…, may change on its own).
+export const hashPanorama = (page) => page.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('panorama'));
+
 export async function waitForHash(page, path, timeout = 20000) {
-	await page.waitFor(async () => (await currentHash(page)) === `#panorama=${path}`, { timeout, message: `hash #panorama=${path}` });
+	await page.waitFor(async () => (await hashPanorama(page)) === path, { timeout, message: `hash #panorama=${path}` });
 }
 
 export async function waitForToast(page, pattern, timeout = 15000) {

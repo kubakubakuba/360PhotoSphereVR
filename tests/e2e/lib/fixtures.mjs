@@ -3,17 +3,19 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const VERSION = 2;
+const VERSION = 5;
 
-// Some photos have GPS positions for the map: Orange and Green share one place (a group).
+// Some photos have GPS positions for the map: Orange and Green share one place (a group), Yellow is
+// ~300 m east of Cyan (nearby-photo markers). Headings say which way each panorama's centre faces.
+// All but Blue have small previews; Blue is published sealed (.pano, see publish.py).
 export const PHOTOS = [
-	{ file: 'p1.jpg', name: 'Fixture Cyan', color: [40, 170, 200], lat: 50.087, lon: 14.421 },
-	{ file: 'p2.jpg', name: 'Fixture Orange', color: [225, 125, 40], default: true, lat: 48.8584, lon: 2.2945 },
-	{ file: 'p3.jpg', name: 'Fixture Green', color: [60, 175, 70], lat: 48.8584, lon: 2.2945 },
-	{ file: 'p4.jpg', name: 'Fixture Purple', color: [140, 80, 205], lat: 40.6892, lon: -74.0445 },
-	{ file: 'p5.jpg', name: 'Fixture Red', color: [215, 55, 75], lat: 35.6586, lon: 139.7454 },
-	{ file: 'p6.jpg', name: 'Fixture Yellow', color: [205, 185, 45] },
-	{ file: 'p7.jpg', name: 'Fixture Blue', color: [50, 90, 215] },
+	{ file: 'p1.jpg', name: 'Fixture Cyan', color: [40, 170, 200], lat: 50.087, lon: 14.421, heading: 0, height: 100, preview: true },
+	{ file: 'p2.jpg', name: 'Fixture Orange', color: [225, 125, 40], default: true, lat: 48.8584, lon: 2.2945, heading: 90, preview: true },
+	{ file: 'p3.jpg', name: 'Fixture Green', color: [60, 175, 70], lat: 48.8584, lon: 2.2945, heading: 90, preview: true },
+	{ file: 'p4.jpg', name: 'Fixture Purple', color: [140, 80, 205], lat: 40.6892, lon: -74.0445, heading: 0, preview: true },
+	{ file: 'p5.jpg', name: 'Fixture Red', color: [215, 55, 75], lat: 35.6586, lon: 139.7454, preview: true },
+	{ file: 'p6.jpg', name: 'Fixture Yellow', color: [205, 185, 45], lat: 50.087, lon: 14.4252, heading: 0, preview: true },
+	{ file: 'p7.jpg', name: 'Fixture Blue', color: [50, 90, 215], sealed: true },
 ];
 
 export const UPLOADS = {
@@ -75,14 +77,20 @@ export async function ensureFixtures(page, dir, { panoramaWidth = 4096 } = {}) {
 		const thumb = photo.file.replace('.jpg', '.thumb.webp');
 		await write(join(paths.imgs, photo.file), { width: panoramaWidth, height: panoramaWidth / 2, color: photo.color, label: index + 1, type: 'image/jpeg', quality: 0.9 });
 		await write(join(paths.thumbs, thumb), { width: 400, height: 200, color: photo.color, label: index + 1, type: 'image/webp', quality: 0.8 });
+		const preview = photo.file.replace('.jpg', '.preview.webp');
+		if (photo.preview) await write(join(paths.thumbs, preview), { width: 1024, height: 512, color: photo.color, label: index + 1, type: 'image/webp', quality: 0.8 });
+		if (photo.sealed) writeFileSync(join(paths.imgs, sealedFile(photo)), seal(readFileSync(join(paths.imgs, photo.file))));
 		gallery.push({
 			id: photo.file.replace('.jpg', ''),
 			name: photo.name,
-			path: `./imgs/${photo.file}`,
+			path: photoPath(photo),
 			thumbnail: `./thumb/${thumb}`,
 			description: 'Test fixture',
 			...(photo.default ? { default: true } : {}),
+			...(photo.preview ? { preview: `./thumb/${preview}` } : {}),
 			...(photo.lat !== undefined ? { lat: photo.lat, lon: photo.lon } : {}),
+			...(photo.heading !== undefined ? { heading: photo.heading } : {}),
+			...(photo.height !== undefined ? { height: photo.height } : {}),
 		});
 	}
 	writeFileSync(paths.gallery, JSON.stringify(gallery, null, 2));
@@ -98,5 +106,14 @@ export async function ensureFixtures(page, dir, { panoramaWidth = 4096 } = {}) {
 	return paths;
 }
 
-export const photoPath = (photo) => `./imgs/${photo.file}`;
+// Same format as publish.py's seal_bytes.
+export function seal(bytes) {
+	const sealed = Buffer.alloc(8 + bytes.length);
+	sealed.write('PANOSEAL');
+	for (let i = 0; i < bytes.length; i++) sealed[8 + i] = bytes[i] ^ ((i * 167 + 13) & 0xff);
+	return sealed;
+}
+
+export const sealedFile = (photo) => photo.file.replace('.jpg', '.pano');
+export const photoPath = (photo) => `./imgs/${photo.sealed ? sealedFile(photo) : photo.file}`;
 export const TILE_COLOR = [230, 40, 230];

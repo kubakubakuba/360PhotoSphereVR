@@ -18,3 +18,10 @@ certs/
 .env
 __pycache__/
 tests/.cache/
+
+_data/
+.venv/
+thumb/
+*.pano
+imgs/
+published/

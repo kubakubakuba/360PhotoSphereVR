@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { LoadingRing } from './loading-ring.js';
-import { decodePanorama } from './image-source.js';
+import { fetchPreviewBitmap, previewUrl } from './image-source.js';
 import { easeOutCubic } from './transitions.js';
 
 // A small spinning photo orb previewing a pin on the globe. Sized in metres for VR;
@@ -83,13 +83,10 @@ export class PreviewOrb extends THREE.Group {
 			this.cache.set(item.path, cached);
 			return cached.promise;
 		}
-		// A small equirect preview when there is one; local photos have a 2:1 thumbnail.
-		const url = item.preview || (item.local && item.thumbnail) || this.resolveUrl(item.path);
+		const url = previewUrl(item) || this.resolveUrl(item.path);
 		const entry = { texture: null };
 		entry.promise = (async () => {
-			const response = await fetch(url);
-			if (!response.ok) throw new Error(`HTTP ${response.status} while loading ${url}`);
-			const bitmap = await decodePanorama(await response.blob(), { maxSize: PREVIEW_SIZE });
+			const bitmap = await fetchPreviewBitmap(url, PREVIEW_SIZE);
 			const texture = new THREE.Texture(bitmap);
 			texture.flipY = false; // decodePanorama flips the rows already
 			texture.colorSpace = THREE.SRGBColorSpace;

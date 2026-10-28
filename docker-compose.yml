@@ -22,6 +22,8 @@ services:
       GLOBE_TILE_URL: ${GLOBE_TILE_URL:-}
       GLOBE_TILE_ATTRIBUTION: ${GLOBE_TILE_ATTRIBUTION:-}
       GLOBE_TILE_MAX_ZOOM: ${GLOBE_TILE_MAX_ZOOM:-17}
+      HOTSPOTS_ENABLED: ${HOTSPOTS_ENABLED:-true}
+      HOTSPOT_MAX_DISTANCE: ${HOTSPOT_MAX_DISTANCE:-5000}
     volumes:
       - ${IMAGES_DIR:-./imgs}:/usr/share/nginx/html/imgs:ro
       - ${THUMBS_DIR:-./thumb}:/usr/share/nginx/html/thumb:ro

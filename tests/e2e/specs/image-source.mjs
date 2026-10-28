@@ -52,6 +52,23 @@ export default {
 			}), null);
 		}],
 
+		['unseals .pano files while downloading, other files pass through', async (ctx, { page }) => {
+			const result = await page.evaluate(async () => {
+				const { downloadBlob } = await import('/vr/image-source.js');
+				const bytes = async (blob) => Array.from(new Uint8Array(await blob.arrayBuffer()));
+				const original = await bytes(await (await fetch('/imgs/p7.jpg')).blob());
+				const sealed = await bytes(await (await fetch('/imgs/p7.pano')).blob());
+				const same = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+				return {
+					sealedDiffers: !same(sealed.slice(8), original),
+					unsealed: same(await bytes(await downloadBlob('/imgs/p7.pano')), original),
+					withProgress: same(await bytes(await downloadBlob('/imgs/p7.pano', () => {})), original),
+					plain: same(await bytes(await downloadBlob('/imgs/p7.jpg')), original),
+				};
+			});
+			assert.deepEqual(result, { sealedDiffers: true, unsealed: true, withProgress: true, plain: true });
+		}],
+
 		['decodes panoramas to the capped size, also without a usable header', async (ctx, { page }) => {
 			const sizes = await page.evaluate(async (oddFile) => {
 				const { decodePanorama } = await import('/vr/image-source.js');

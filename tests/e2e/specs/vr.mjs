@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { PHOTOS, photoPath } from '../lib/fixtures.mjs';
 import { sleep } from '../lib/browser.mjs';
 import { colorDistance, isDark } from '../lib/png.mjs';
-import { currentHash, sampleAt, waitForColor, waitForDark, waitForHash } from '../lib/helpers.mjs';
+import { hashPanorama, sampleAt, waitForColor, waitForDark, waitForHash } from '../lib/helpers.mjs';
 
 const defaultPhoto = PHOTOS.find((photo) => photo.default);
 const CARD_PICK = PHOTOS[2]; // top-right card on the first gallery page (3 columns)
@@ -37,6 +37,14 @@ async function flickStick(page, x) {
 }
 
 const aim = (page, [x, y, z]) => controller(page, `c.position.set(${x}, ${y}, ${z}); c.quaternion.set(0, 0, 0, 1);`);
+
+// Points the controller from the head in a direction: yaw to the right, pitch up (degrees).
+function aimAlong(page, yawDegrees, pitchDegrees) {
+	const a = (pitchDegrees * Math.PI) / 360;
+	const b = (-yawDegrees * Math.PI) / 360;
+	const [sx, cx, sy, cy] = [Math.sin(a), Math.cos(a), Math.sin(b), Math.cos(b)];
+	return controller(page, `c.position.set(0, ${EYE - 0.05}, -0.05); c.quaternion.set(${cy * sx}, ${sy * cx}, ${-sy * sx}, ${cy * cx});`);
+}
 
 // Positive degrees turn left, negative right.
 const setYaw = (page, degrees) => page.evaluate((deg) => {
@@ -190,8 +198,28 @@ export function vrSpec({ layers }) {
 				await waitForColor(page, current.color);
 			}],
 
+			['a marker points at the photo nearby; the orb previews it while it loads', async (ctx, { page }) => {
+				const near = PHOTOS[5]; // ~300 m east of Prague (QUEUE_PICK), which faces north from 100 m up
+				await enterVr(page, QUEUE_PICK);
+				await aimAlong(page, 90, -Math.atan2(100, 300) * 180 / Math.PI);
+				await sleep(1500); // markers fade in once the photo surrounds the user
+				ctx.server.setDelay('/imgs/', 5000);
+				try {
+					await press(page, 'trigger');
+					// The orb in front shows the preview while the full photo is still on its way.
+					await waitForColor(page, near.color, { timeout: VR_TIMEOUT });
+					assert.equal(await hashPanorama(page), photoPath(QUEUE_PICK), 'still loading the full photo');
+				} finally {
+					ctx.server.setDelay('/imgs/', 0);
+				}
+				await waitForHash(page, photoPath(near), VR_TIMEOUT);
+				await waitForColor(page, near.color, { at: [0.1, 0.5], timeout: VR_TIMEOUT });
+				await exitVrFromGallery(page);
+				await waitForColor(page, near.color);
+			}],
+
 			['the globe opens from the gallery and its pins open photos', async (ctx, { page }) => {
-				const current = QUEUE_PICK; // Prague
+				const current = PHOTOS[5]; // next to Prague
 				const paris = [PHOTOS[1], PHOTOS[2]]; // one pin for both
 				await enterVr(page, current);
 				await press(page, 'b-button');
@@ -210,13 +238,35 @@ export function vrSpec({ layers }) {
 				await sleep(1500); // hover: the preview orb appears above the pin
 				await press(page, 'trigger');
 				const opened = await page.waitFor(async () => {
-					const hash = await currentHash(page);
-					return paris.find((photo) => hash === `#panorama=${photoPath(photo)}`);
+					const shown = await hashPanorama(page);
+					return paris.find((photo) => shown === photoPath(photo));
 				}, { timeout: VR_TIMEOUT, message: 'a Paris photo to open' });
 				await waitForColor(page, opened.color, { at: [0.1, 0.5], timeout: VR_TIMEOUT });
 				await waitForColor(page, opened.color);
 				await exitVrFromGallery(page);
 				await waitForColor(page, opened.color);
+			}],
+
+			['A / X hides the markers, which stay hidden on the desktop', async (ctx, { page }) => {
+				await page.evaluate((hash) => { location.hash = hash; }, `panorama=${encodeURIComponent(photoPath(QUEUE_PICK))}`);
+				await waitForColor(page, QUEUE_PICK.color);
+				await enterVr(page, QUEUE_PICK);
+				await press(page, 'a-button');
+				// Aiming where the marker to the photo nearby would be selects nothing.
+				await aimAlong(page, 90, -Math.atan2(100, 300) * 180 / Math.PI);
+				await sleep(1500);
+				await press(page, 'trigger');
+				await sleep(1000);
+				assert.equal(await hashPanorama(page), photoPath(QUEUE_PICK), 'hidden markers cannot be selected');
+				await exitVrFromGallery(page);
+				await waitForColor(page, QUEUE_PICK.color);
+				const toggle = () => page.evaluate(() => ({
+					pressed: document.getElementById('toggle-hotspots-btn').getAttribute('aria-pressed'),
+					shown: !document.querySelector('.hotspots').hidden,
+				}));
+				assert.deepEqual(await toggle(), { pressed: 'false', shown: false });
+				await page.click('#toggle-hotspots-btn'); // back on for the other tests
+				assert.deepEqual(await toggle(), { pressed: 'true', shown: true });
 			}],
 		],
 	};

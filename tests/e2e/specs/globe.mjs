@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PHOTOS, UPLOADS, TILE_COLOR, photoPath } from '../lib/fixtures.mjs';
-import { exifSegment, withGps } from '../lib/exif.mjs';
+import { exifSegment, withGps, xmpSegment } from '../lib/exif.mjs';
 import { sleep } from '../lib/browser.mjs';
 import { colorDistance } from '../lib/png.mjs';
 import { sampleAt, waitForColor, waitForHash, waitForToast } from '../lib/helpers.mjs';
@@ -80,10 +80,10 @@ export default {
 		['the map opens on the current photo with a pin per place', async (ctx, { page }) => {
 			await openMap(page);
 			const all = await pins(page);
-			// Prague, Paris (two photos), New York, Tokyo
+			// Prague (two photos 300 m apart), Paris (two photos), New York, Tokyo
 			assert.equal(all.length, 4);
 			assert.deepEqual(all.flatMap((pin) => pin.paths).sort(), geotagged.map(photoPath).sort());
-			const paris = all.find((pin) => pin.paths.length === 2);
+			const paris = all.find((pin) => pin.paths.includes(photoPath(PARIS[0])));
 			assert.deepEqual(paris.paths.sort(), PARIS.map(photoPath).sort());
 			const center = await page.evaluate(() => {
 				const rect = document.getElementById('globe-stage').getBoundingClientRect();
@@ -166,6 +166,37 @@ export default {
 
 			await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: start.x, y: start.y, deltaX: 0, deltaY: -200 });
 			await page.waitFor(async () => (await view()).altitude < dragged.altitude * 0.8, { message: 'zoom in' });
+			await closeMap(page);
+		}],
+
+		['the locate button goes to the current photo', async (ctx, { page }) => {
+			await openMap(page);
+			await setView(page, { lat: -40, lon: -120, altitude: 2 });
+			await page.click('#globe-locate');
+			const view = () => page.evaluate(() => ({ ...document.getElementById('globe-stage').globeView.globe.view }));
+			await page.waitFor(async () => {
+				const { lat, lon, altitude } = await view();
+				return Math.abs(lat - PRAGUE.lat) < 0.01 && Math.abs(lon - PRAGUE.lon) < 0.01 && altitude <= 0.31;
+			}, { message: 'the view on Prague' });
+			await page.waitFor(() => page.evaluate(() => !document.getElementById('globe-card').hidden), { message: 'its card' });
+			await closeMap(page);
+		}],
+
+		['"Show on map" in the gallery opens the map on that photo', async (ctx, { page }) => {
+			const target = PHOTOS[3]; // New York
+			await page.click('#open-gallery-btn');
+			await page.click(`#gallery-grid .gallery-card[data-path="${photoPath(target)}"] .card-map`);
+			// The card comes from the pin it flew to (a pin under the mouse may show first).
+			await page.waitFor(async () => {
+				const { view } = await stage(page);
+				return view && (await page.evaluate((name) => {
+					const card = document.getElementById('globe-card');
+					return !card.hidden && document.getElementById('globe-card-title').textContent === name;
+				}, target.name));
+			}, { message: `the map with ${target.name}'s card` });
+			const { lat, lon } = await page.evaluate(() => ({ ...document.getElementById('globe-stage').globeView.globe.view }));
+			assert.ok(Math.abs(lat - target.lat) < 0.01 && Math.abs(lon - target.lon) < 0.01, `view on ${target.name} (${lat}, ${lon})`);
+			assert.equal(await page.evaluate(() => document.getElementById('gallery-modal').open), false);
 			await closeMap(page);
 		}],
 
@@ -272,6 +303,15 @@ export default {
 				return readGps(new Blob([new Uint8Array(bytes)]));
 			}, [0xff, 0xd8, ...exifSegment(0, 0), 0xff, 0xd9]);
 			assert.equal(none, null, '0 / 0 means no fix');
+
+			// DJI's heading (gimbal yaw, else flight yaw) and height come from the XMP.
+			const xmp = '<x:xmpmeta><rdf:Description drone-dji:RelativeAltitude="+120.40" drone-dji:GimbalYawDegree="-35.70" '
+				+ 'drone-dji:FlightYawDegree="+10.00"/></x:xmpmeta>';
+			const metadata = await page.evaluate(async (bytes) => {
+				const { readPhotoMetadata } = await import('./vr/exif-gps.js');
+				return readPhotoMetadata(new Blob([new Uint8Array(bytes)]));
+			}, [0xff, 0xd8, ...exifSegment(50.087, 14.421), ...xmpSegment(xmp), 0xff, 0xd9]);
+			assert.deepEqual(metadata, { lat: 50.087, lon: 14.421, heading: 324.3, height: 120.4 });
 		}],
 
 		['photos added on this device appear on the map', async (ctx, { page }) => {

@@ -41,6 +41,8 @@ window.APP_CONFIG = {
 	globeTileUrl: $(str "$TILE_URL"),
 	globeTileAttribution: $(str "$TILE_ATTRIBUTION"),
 	globeTileMaxZoom: $(num "${GLOBE_TILE_MAX_ZOOM:-17}" 17),
+	hotspots: $(bool "${HOTSPOTS_ENABLED:-true}"),
+	hotspotMaxDistance: $(num "${HOTSPOT_MAX_DISTANCE:-5000}" 5000),
 };
 CONFIG
 

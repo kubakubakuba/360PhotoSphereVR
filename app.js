@@ -1,6 +1,9 @@
 import { Viewer as PhotoSphereViewer } from '@photo-sphere-viewer/core';
 import { LocalLibrary } from './local-library.js';
 import { itemCoordinates } from './vr/geo.js';
+import { PanoramaHotspots } from './panorama-hotspots.js';
+import { hasHotspots, hotspotsVisible, setHotspotsVisible } from './vr/hotspots.js';
+import { previewUrl, downloadBlob } from './vr/image-source.js';
 
 const DEFAULT_CONFIG = {
 	title: '360° Photo Sphere',
@@ -15,14 +18,22 @@ const DEFAULT_CONFIG = {
 	globeTileUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
 	globeTileAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
 	globeTileMaxZoom: 17,
+	hotspots: true,
+	hotspotMaxDistance: 5000,
 };
 const config = { ...DEFAULT_CONFIG, ...(window.APP_CONFIG || {}) };
 const FALLBACK_PANORAMA = 'DEFAULT.JPG';
 const PLACEHOLDER_THUMBNAIL = 'placeholder_thumbnail.png';
 const EXIT_TIMEOUT_MS = 2000;
 const PANORAMA_ERROR = 'Could not load panorama';
+const VIEW_HASH_DELAY_MS = 300;
+const DEG = Math.PI / 180;
 
 let panoramaViewer = null;
+let hotspots = null;
+let loadGeneration = 0; // the latest showPanorama; older loads give way
+let shownObjectUrl = null; // the downloaded full photo on screen, revoked once replaced
+let viewHashTimer = null;
 let vrViewer = null;
 let vrSession = null;
 let viewerModule = null;
@@ -69,17 +80,70 @@ const els = {
 	photoTitle: $('photo-title'),
 	prevPhoto: $('prev-photo'),
 	nextPhoto: $('next-photo'),
+	copyLink: $('copy-link-btn'),
+	toggleHotspots: $('toggle-hotspots-btn'),
+	hdProgress: $('hd-progress'),
+	globeLocate: $('globe-locate'),
 };
 
 const ICONS = {
 	add: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
 	remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+	map: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>',
 };
 
 // --- Helpers ------------------------------------------------------------
 
 function panoramaFromHash() {
 	return new URLSearchParams(window.location.hash.slice(1)).get('panorama');
+}
+
+// View direction in the link: #panorama=…&yaw=<°>&pitch=<°>&zoom=<0–100>.
+function viewFromHash() {
+	const params = new URLSearchParams(window.location.hash.slice(1));
+	const number = (key) => {
+		const value = params.get(key);
+		return value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+	};
+	return { yaw: number('yaw'), pitch: number('pitch'), zoom: number('zoom') };
+}
+
+function panoramaHash(path) {
+	return `#panorama=${encodeURIComponent(path)}`;
+}
+
+// Keeps the link pointing at what is on screen (replaceState: no hashchange, no history entries).
+function writeViewToHash() {
+	clearTimeout(viewHashTimer);
+	if (!panoramaViewer || !currentPanorama || panoramaFromHash() !== currentPanorama) return;
+	const { yaw, pitch } = panoramaViewer.getPosition();
+	const round = (value) => Math.round(value * 10) / 10;
+	const yawDegrees = round(Math.atan2(Math.sin(yaw), Math.cos(yaw)) / DEG);
+	const zoom = Math.round(panoramaViewer.getZoomLevel());
+	history.replaceState(null, '', `${panoramaHash(currentPanorama)}&yaw=${yawDegrees}&pitch=${round(pitch / DEG)}&zoom=${zoom}`);
+}
+
+function scheduleViewHash() {
+	clearTimeout(viewHashTimer);
+	viewHashTimer = setTimeout(writeViewToHash, VIEW_HASH_DELAY_MS);
+}
+
+function viewOptions({ yaw, pitch, zoom } = {}) {
+	const options = {};
+	if (yaw !== null && yaw !== undefined) options.position = { yaw: yaw * DEG, pitch: (pitch ?? 0) * DEG };
+	if (zoom !== null && zoom !== undefined) options.zoom = Math.min(100, Math.max(0, zoom));
+	return options;
+}
+
+async function copyLink() {
+	writeViewToHash();
+	try {
+		await navigator.clipboard.writeText(window.location.href);
+		showToast('Link copied.');
+	} catch (error) {
+		console.warn('Could not copy the link:', error);
+		showToast('Could not copy the link.', 'error');
+	}
 }
 
 function setStatus(state, text) {
@@ -140,13 +204,14 @@ function resolveDefaultPanorama() {
 
 // --- Desktop panorama viewer --------------------------------------------
 
-function initPanoramaViewer(path) {
+function initPanoramaViewer(path, view = {}) {
 	const compact = window.innerWidth < 600;
 	panoramaViewer = new PhotoSphereViewer({
 		container: els.panorama,
-		panorama: resolveUrl(path),
 		navbar: compact ? ['zoom', 'fullscreen'] : ['zoom', 'move', 'fullscreen'],
-		defaultZoomLvl: 0,
+		defaultYaw: (view.yaw ?? 0) * DEG,
+		defaultPitch: (view.pitch ?? 0) * DEG,
+		defaultZoomLvl: view.zoom ?? 0,
 		minFov: 30,
 		maxFov: 90,
 		mousewheel: true,
@@ -160,23 +225,119 @@ function initPanoramaViewer(path) {
 	// A photo that loads clears the error of one that didn't.
 	panoramaViewer.addEventListener('panorama-loaded', () => {
 		if (els.statusText.textContent === PANORAMA_ERROR) showXrStatus();
+		hotspots?.show(itemFor(currentPanorama), allItems());
 	});
+	panoramaViewer.addEventListener('position-updated', scheduleViewHash);
+	panoramaViewer.addEventListener('zoom-updated', scheduleViewHash);
+	if (config.hotspots !== false) {
+		hotspots = new PanoramaHotspots({
+			viewer: panoramaViewer,
+			maxDistance: Number(config.hotspotMaxDistance) || 5000,
+			onSelect: (target) => { window.location.hash = panoramaHash(target); },
+		});
+		hotspots.setVisible(hotspotsVisible());
+	}
+	refreshHotspotsToggle(); // VR may have changed the setting
+	loadPanorama(path, { transition: false });
 }
 
-function showPanorama(path) {
+function destroyPanoramaViewer() {
+	loadGeneration++;
+	setHdProgress(null);
+	hotspots?.destroy();
+	hotspots = null;
+	panoramaViewer?.destroy();
+	panoramaViewer = null;
+	if (shownObjectUrl) URL.revokeObjectURL(shownObjectUrl);
+	shownObjectUrl = null;
+}
+
+function showPanorama(path, view = {}) {
 	if (!path || path === currentPanorama) return;
 	if (!isAvailable(path)) {
 		showToast('That photo is no longer stored on this device.', 'error');
-		history.replaceState(null, '', `#panorama=${encodeURIComponent(currentPanorama)}`);
+		history.replaceState(null, '', panoramaHash(currentPanorama));
 		return;
 	}
 	currentPanorama = path;
 	refreshCurrentPhoto();
-	if (panoramaViewer) {
-		panoramaViewer.setPanorama(resolveUrl(path), { transition: 800, showLoader: true }).catch((error) => {
-			console.error('setPanorama failed:', error);
-		});
+	if (panoramaViewer) loadPanorama(path, { ...viewOptions(view), transition: 800 });
+}
+
+function itemFor(path) {
+	return allItems().find((item) => item.path === path) ?? null;
+}
+
+// Preview first (about a second) while the full photo downloads alongside; it then replaces the
+// preview without changing the view.
+async function loadPanorama(path, options) {
+	const generation = ++loadGeneration;
+	const current = () => generation === loadGeneration && panoramaViewer;
+	const preview = previewUrl(itemFor(path));
+	const full = resolveUrl(path);
+	if (!preview) {
+		setHdProgress(null);
+		if (full.startsWith('blob:')) {
+			await showFull(full, { ...options, showLoader: true }, current);
+			return;
+		}
+		// Downloaded here rather than by the viewer, so sealed (.pano) photos get unsealed first.
+		panoramaViewer.loader.showUndefined();
+		let blob = null;
+		try {
+			blob = await downloadBlob(full, (progress) => current() && panoramaViewer.loader.setProgress(progress * 100));
+		} catch (error) {
+			console.warn('Download failed, leaving it to the viewer:', error);
+		}
+		if (!current()) return;
+		await showFull(blob ? URL.createObjectURL(blob) : full, { ...options, showLoader: true }, current, !!blob);
+		return;
 	}
+
+	setHdProgress(0);
+	// Local photos are already in memory (blob: URLs); others download with progress.
+	const download = full.startsWith('blob:')
+		? Promise.resolve(null)
+		: downloadBlob(full, (progress) => current() && setHdProgress(progress * 100));
+	download.catch(() => {}); // handled below
+	try {
+		await panoramaViewer.setPanorama(preview, { ...options, showLoader: false });
+	} catch (error) {
+		if (!current()) return;
+		console.warn('Preview failed to load, waiting for the full photo:', error);
+	}
+	let blob = null;
+	try {
+		blob = await download;
+	} catch (error) {
+		console.warn('Download failed, leaving it to the viewer:', error); // which then reports it
+	}
+	if (!current()) return;
+	await showFull(blob ? URL.createObjectURL(blob) : full, { transition: false, showLoader: false }, current, !!blob);
+	if (generation === loadGeneration) setHdProgress(null);
+}
+
+// owned: an object URL made here, released once something else is shown.
+async function showFull(url, options, current, owned = false) {
+	let shown = false;
+	try {
+		await panoramaViewer.setPanorama(url, options);
+		shown = !!current();
+	} catch (error) {
+		if (current()) console.error('setPanorama failed:', error);
+	}
+	if (!shown) {
+		if (owned) URL.revokeObjectURL(url);
+		return;
+	}
+	if (shownObjectUrl) URL.revokeObjectURL(shownObjectUrl);
+	shownObjectUrl = owned ? url : null;
+}
+
+// "Full resolution 45 %" while the full photo replaces the preview; null hides it.
+function setHdProgress(percent) {
+	els.hdProgress.hidden = percent === null;
+	if (percent !== null) els.hdProgress.textContent = `Full resolution ${Math.round(percent)} %`;
 }
 
 // --- Gallery modal ------------------------------------------------------
@@ -217,10 +378,21 @@ function createGalleryCard(item) {
 	});
 	card.append(open);
 
+	if (config.globe !== false && itemCoordinates(item)) {
+		const locate = document.createElement('button');
+		locate.type = 'button';
+		locate.className = 'card-action card-map';
+		locate.title = 'Show on map';
+		locate.setAttribute('aria-label', `Show ${title.textContent} on the map`);
+		locate.innerHTML = ICONS.map;
+		locate.addEventListener('click', () => openGlobeModal({ focus: item.path }));
+		card.append(locate);
+	}
+
 	if (item.local) {
 		const remove = document.createElement('button');
 		remove.type = 'button';
-		remove.className = 'card-remove';
+		remove.className = 'card-action card-remove';
 		remove.title = 'Remove from this device';
 		remove.setAttribute('aria-label', `Remove ${title.textContent} from this device`);
 		remove.innerHTML = ICONS.remove;
@@ -252,7 +424,22 @@ function renderGallery() {
 	}
 	refreshCurrentPhoto();
 	els.openGlobe.hidden = !globeAvailable();
+	refreshHotspotsToggle();
 	globeView?.setItems(allItems(), currentPanorama);
+}
+
+// --- Markers to nearby photos ---------------------------------------------
+
+function refreshHotspotsToggle() {
+	els.toggleHotspots.hidden = config.hotspots === false || !hasHotspots(allItems());
+	els.toggleHotspots.setAttribute('aria-pressed', String(hotspotsVisible()));
+}
+
+function toggleHotspots() {
+	setHotspotsVisible(!hotspotsVisible());
+	hotspots?.setVisible(hotspotsVisible());
+	refreshHotspotsToggle();
+	showToast(hotspotsVisible() ? 'Markers to nearby photos shown' : 'Markers to nearby photos hidden', 'info', 1800);
 }
 
 function photoName(path) {
@@ -286,14 +473,37 @@ function stepPhoto(direction) {
 	window.location.hash = `panorama=${encodeURIComponent(next.path)}`;
 }
 
-function onArrowKey(event) {
-	if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+// ←/→ step through photos, M opens / closes the map, H shows / hides the markers.
+function onKeyDown(event) {
 	if (vrSession || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-	// In fullscreen the arrow keys rotate the view (Photo Sphere Viewer keyboard control).
-	if (els.modal.open || els.globeModal.open || document.fullscreenElement) return;
 	if (event.target.closest?.('input, textarea, select, [contenteditable]')) return;
+	// In fullscreen the arrow keys rotate the view (Photo Sphere Viewer keyboard control).
+	if (els.modal.open || document.fullscreenElement) return;
+	if (event.code === 'KeyM' && !event.repeat) {
+		if (els.globeModal.open) els.globeModal.close();
+		else if (globeAvailable()) openGlobeModal();
+		return;
+	}
+	if (event.code === 'KeyH' && !event.repeat) {
+		if (!els.toggleHotspots.hidden && !els.globeModal.open) toggleHotspots();
+		return;
+	}
+	if ((event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') || els.globeModal.open) return;
 	event.preventDefault();
 	stepPhoto(event.key === 'ArrowRight' ? 1 : -1);
+}
+
+// A pasted link for the photo already shown only turns the view.
+function onHashChange() {
+	const path = panoramaFromHash();
+	const view = viewFromHash();
+	if (path && path !== currentPanorama) {
+		showPanorama(path, view);
+		return;
+	}
+	const { position, zoom } = viewOptions(view);
+	if (position) panoramaViewer?.rotate(position);
+	if (zoom !== undefined) panoramaViewer?.zoom(zoom);
 }
 
 function openGalleryModal() {
@@ -307,12 +517,17 @@ function globeAvailable() {
 	return config.globe !== false && allItems().some((item) => itemCoordinates(item));
 }
 
-async function openGlobeModal() {
+// focus: a photo to fly to and preview, instead of the view the map was left at.
+async function openGlobeModal({ focus } = {}) {
 	if (els.modal.open) els.modal.close();
-	els.globeModal.showModal();
+	if (!els.globeModal.open) els.globeModal.showModal();
 	try {
 		const { GlobeView } = await (globeModule ??= import('./globe-view.js'));
-		if (!els.globeModal.open || globeView) return;
+		if (!els.globeModal.open) return;
+		if (globeView) {
+			if (focus) globeView.focus(focus);
+			return;
+		}
 		globeView = new GlobeView({
 			stage: els.globeStage,
 			card: {
@@ -323,7 +538,7 @@ async function openGlobeModal() {
 				action: els.globeCardAction,
 			},
 			attribution: els.globeAttribution,
-			zoom: { in: els.globeZoomIn, out: els.globeZoomOut },
+			zoom: { in: els.globeZoomIn, out: els.globeZoomOut, locate: els.globeLocate },
 			items: allItems(),
 			current: currentPanorama,
 			config,
@@ -333,6 +548,7 @@ async function openGlobeModal() {
 				els.globeModal.close();
 			},
 		});
+		if (focus) globeView.focus(focus);
 	} catch (error) {
 		console.error('Could not open the map:', error);
 		showToast('Could not open the map.', 'error');
@@ -469,8 +685,7 @@ async function enterVR() {
 		if (session !== vrSession) return;
 
 		// Free the desktop viewer's GPU memory while in VR.
-		panoramaViewer?.destroy();
-		panoramaViewer = null;
+		destroyPanoramaViewer();
 		els.panorama.hidden = true;
 		els.vr.hidden = false;
 
@@ -540,7 +755,9 @@ async function init() {
 	els.openGallery.addEventListener('click', openGalleryModal);
 	els.prevPhoto.addEventListener('click', () => stepPhoto(-1));
 	els.nextPhoto.addEventListener('click', () => stepPhoto(1));
-	window.addEventListener('keydown', onArrowKey);
+	window.addEventListener('keydown', onKeyDown);
+	els.copyLink.addEventListener('click', copyLink);
+	els.toggleHotspots.addEventListener('click', toggleHotspots);
 	els.modalClose.addEventListener('click', () => els.modal.close());
 	els.modal.addEventListener('click', (event) => {
 		if (event.target === els.modal) els.modal.close();
@@ -559,7 +776,7 @@ async function init() {
 		refreshCurrentPhoto();
 	});
 
-	window.addEventListener('hashchange', () => showPanorama(panoramaFromHash()));
+	window.addEventListener('hashchange', onHashChange);
 	window.addEventListener('resize', () => panoramaViewer?.autoSize());
 
 	detectXrSupport();
@@ -573,7 +790,7 @@ async function init() {
 		history.replaceState(null, '', `#panorama=${encodeURIComponent(currentPanorama)}`);
 		showToast('That photo is no longer stored on this device.', 'error');
 	}
-	initPanoramaViewer(currentPanorama);
+	initPanoramaViewer(currentPanorama, requested === currentPanorama ? viewFromHash() : {});
 	renderGallery();
 }
 
